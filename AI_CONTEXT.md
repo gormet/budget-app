@@ -1,6 +1,6 @@
 # AI Context Document - Budget App Project
 
-**Generated:** 2024-10-24 | **Updated:** 2025-10-25  
+**Generated:** 2024-10-24 | **Updated:** 2025-10-26  
 **Project:** Production-grade multi-user budgeting web application  
 **Status:** ✅ Fully functional with workspace collaboration  
 **Currency:** RM (Malaysian Ringgit)
@@ -63,7 +63,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 #### 1. profiles
 - Links to `auth.users` (Supabase Auth)
 - Auto-created via trigger on user signup
-- Fields: id (UUID PK), email (unique), display_name (optional), created_at
+- Fields: id (UUID PK), email (unique), created_at
+- **Note:** display_name column needs to be added (see FIX_MEMBERS_API.sql)
 
 #### 2. workspaces ⭐ NEW
 - Container for shared budgets
@@ -160,6 +161,19 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 - Returns current user's role in specified workspace
 - Helper function for permission checks
 
+#### find_profile_for_invite(email_to_find TEXT) ⭐ NEW
+- **SECURITY DEFINER function** - bypasses RLS to lookup profiles by email
+- Used by invite API to find users who aren't yet in shared workspaces
+- Returns: id, email, display_name
+- Solves RLS issue where profiles can only be viewed if in shared workspace
+
+#### add_workspace_member(workspace_uuid UUID, profile_uuid UUID, member_role workspace_role) ⭐ NEW
+- **SECURITY DEFINER function** - bypasses RLS to add members
+- Verifies caller is OWNER before adding
+- Checks if user is already a member
+- Returns new member with profile info
+- Solves RLS circular dependency on workspace_members INSERT
+
 ### Triggers
 
 #### on_auth_user_created
@@ -183,6 +197,7 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │   ├── (public)/
 │   │   └── login/
 │   │       └── page.tsx              # Magic Link login (with Suspense wrapper)
+│   ├── globals.css                   # Tailwind imports + global styles ⭐ UPDATED (dropdown fix)
 │   ├── workspace/                    # ⭐ NEW
 │   │   └── manage/
 │   │       └── page.tsx              # Workspace member management (OWNER only)
@@ -237,7 +252,6 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │   │   └── page.tsx                  # Expense history with accordion
 │   ├── reimbursements/
 │   │   └── page.tsx                  # Reimbursement approval interface
-│   ├── globals.css                   # Tailwind imports
 │   ├── layout.tsx                    # Root layout
 │   └── page.tsx                      # Dashboard (home)
 ├── components/
@@ -281,6 +295,10 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 ├── WORKSPACE_QUICKSTART.md           # ⭐ NEW - Quick reference
 ├── WORKSPACE_LOADING_DEBUG.md        # ⭐ NEW - Debugging guide
 ├── COMPLETE_FIX.sql                  # ⭐ NEW - All workspace fixes
+├── FIX_MEMBERS_API.sql               # ⭐ NEW - Members API fix (display_name, ambiguous columns)
+├── FIX_MEMBERS_ERROR.md              # ⭐ NEW - Members API fix guide
+├── FIX_INVITE_PROFILE_LOOKUP.sql     # ⭐ NEW - Invite RLS fixes
+├── FIX_INVITE_RLS_ERROR.md           # ⭐ NEW - Invite RLS fix documentation
 ├── FIX_NOW.md                        # ⭐ NEW - Quick fix steps
 ├── GITHUB_SETUP.md                   # ⭐ NEW - GitHub push guide
 └── PUSH_TO_GITHUB.txt                # ⭐ NEW - Quick reference
@@ -479,6 +497,35 @@ When upgrading to workspace model:
 **Behavior:** Items with no expenses show 0 spend  
 **Handled by:** Views return 0 via COALESCE when no matching expense items
 
+### 7. Members API 500 Error ✅ SOLVED
+**Error:** GET /api/workspaces/:id/members returns 500 - "column reference 'profile_id' is ambiguous"  
+**Cause:** Two issues:
+1. profiles table missing display_name column
+2. get_workspace_members() function has ambiguous column references in SQL query
+**Solution:** Run `FIX_MEMBERS_API.sql` in Supabase SQL Editor  
+**Status:** Fixed with explicit table aliases and type casts
+
+### 8. Invite User Returns 404 ✅ SOLVED
+**Error:** "User with this email does not exist" even though user exists in database  
+**Cause:** RLS policy on profiles table only allows viewing:
+- Your own profile
+- Profiles of users in shared workspaces
+When inviting someone who isn't yet in any shared workspace, RLS blocks the query
+**Solution:** Created `find_profile_for_invite()` SECURITY DEFINER function to bypass RLS  
+**Status:** Fixed - see `FIX_INVITE_PROFILE_LOOKUP.sql`
+
+### 9. Invite Member RLS Violation ✅ SOLVED
+**Error:** "new row violates row-level security policy for table 'workspace_members'"  
+**Cause:** RLS INSERT policy checks if current user is OWNER by querying workspace_members, creating circular dependency  
+**Solution:** Created `add_workspace_member()` SECURITY DEFINER function to handle invite atomically  
+**Status:** Fixed - see `FIX_INVITE_PROFILE_LOOKUP.sql`
+
+### 10. Dropdown Arrow Too Close to Border ✅ SOLVED
+**Issue:** Dropdown icons positioned too close to right edge of select fields  
+**Cause:** Default browser styling doesn't provide adequate padding for custom arrow  
+**Solution:** Added global CSS styling for select elements with proper spacing  
+**Status:** Fixed in `app/globals.css` with custom SVG arrow and 2.5rem right padding
+
 ---
 
 ## Current State
@@ -602,8 +649,13 @@ Already run in Supabase:
 - `06_fix_workspace_creation.sql` - RLS policy fix
 - `07_workspace_creation_alternative.sql` - Alternative creation method
 - `08_fix_infinite_recursion.sql` - Fixes circular RLS references
+- `FIX_MEMBERS_API.sql` - Adds display_name column and fixes get_workspace_members() ⭐ NEW
+- `FIX_INVITE_PROFILE_LOOKUP.sql` - Adds SECURITY DEFINER functions for invite ⭐ NEW
 
-**Important:** Run `COMPLETE_FIX.sql` if experiencing workspace loading issues.
+**Important:** 
+- Run `COMPLETE_FIX.sql` if experiencing workspace loading issues
+- Run `FIX_MEMBERS_API.sql` if members page shows errors
+- Run `FIX_INVITE_PROFILE_LOOKUP.sql` if invite functionality fails
 
 ---
 
@@ -821,14 +873,51 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 5. Auth callback implementation (page → route handler)
 6. PKCE flow state errors (Supabase config)
 7. Currency display ($ → RM)
+8. Members API ambiguous column error
+9. Invite functionality RLS blocking (2 issues)
+10. Dropdown arrow spacing
 
-**Files Created:** 14 new files (components, APIs, migrations, documentation)
-**Files Updated:** 13 files (pages, components, types, APIs)
+**Files Created:** 18 new files (components, APIs, migrations, documentation)
+**Files Updated:** 14 files (pages, components, types, APIs, styles)
 **Total Commits:** 2 commits ready to push
+
+### Invite Functionality Fixes (2025-10-26) ⭐
+**Problem:** Two RLS-related errors prevented inviting users to workspaces
+
+**Issue 1 - Profile Lookup Blocked:**
+- Error: "User with this email does not exist" (404) even though user exists
+- Cause: RLS policy only allows viewing profiles in shared workspaces
+- Solution: Created `find_profile_for_invite()` SECURITY DEFINER function
+
+**Issue 2 - Member Insert Blocked:**
+- Error: "new row violates row-level security policy for table 'workspace_members'"
+- Cause: RLS INSERT policy has circular dependency (checks workspace_members while inserting)
+- Solution: Created `add_workspace_member()` SECURITY DEFINER function
+
+**Why Database Functions:**
+- SECURITY DEFINER bypasses RLS surgically (only for specific operations)
+- Maintains user context and security checks
+- Prevents service role key misuse
+- Enforces business logic at database level
+- Atomic operations with proper transaction handling
+
+**Files Modified:**
+1. ✅ `FIX_INVITE_PROFILE_LOOKUP.sql` - Created with 2 SECURITY DEFINER functions
+2. ✅ `FIX_INVITE_RLS_ERROR.md` - Comprehensive documentation
+3. ✅ `app/api/workspaces/[id]/invite/route.ts` - Updated to use RPC functions
+
+### UI Improvements (2025-10-26) ⭐
+**Dropdown Styling Fix:**
+- Issue: Dropdown arrow icons too close to right border on all select elements
+- Solution: Added global CSS styling with proper padding and custom SVG arrow
+- Files: `app/globals.css`
+- Impact: Improved UX across all dropdown fields (month selector, workspace switcher, role selectors)
 
 ### Final Status
 ✅ Fully functional multi-user workspace system
+✅ Invite functionality working (RLS issues resolved)
 ✅ Tested with multiple users and roles
+✅ UI polished (dropdown spacing fixed)
 ✅ Ready for GitHub push
 ✅ Running locally on port 3000
 

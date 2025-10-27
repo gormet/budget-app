@@ -40,13 +40,13 @@ export async function POST(
       )
     }
 
-    // Find the profile by email
-    const { data: profile, error: profileError } = await supabase
-      .from('profiles')
-      .select('id, email')
-      .eq('email', validated.email)
-      .single()
+    // Find the profile by email using SECURITY DEFINER function (bypasses RLS)
+    const { data: profiles, error: profileError } = await supabase
+      .rpc('find_profile_for_invite', { email_to_find: validated.email })
 
+
+    const profile = profiles?.[0]
+    
     if (profileError || !profile) {
       // User doesn't exist yet - in a real app, you'd send a magic link invitation
       // For now, return an error
@@ -59,48 +59,28 @@ export async function POST(
       )
     }
 
-    // Check if already a member
-    const { data: existingMember } = await supabase
-      .from('workspace_members')
-      .select('role')
-      .eq('workspace_id', workspaceId)
-      .eq('profile_id', profile.id)
-      .single()
-
-    if (existingMember) {
-      return NextResponse.json(
-        { ok: false, message: 'User is already a member of this workspace' },
-        { status: 400 }
-      )
-    }
-
-    // Add member
-    const { data: newMember, error: addError } = await supabase
-      .from('workspace_members')
-      .insert({
-        workspace_id: workspaceId,
-        profile_id: profile.id,
-        role: validated.role,
+    // Add member using SECURITY DEFINER function (bypasses RLS)
+    const { data: newMembers, error: addError } = await supabase
+      .rpc('add_workspace_member', {
+        workspace_uuid: workspaceId,
+        profile_uuid: profile.id,
+        member_role: validated.role,
       })
-      .select(`
-        role,
-        created_at,
-        profiles (
-          id,
-          email,
-          display_name
-        )
-      `)
-      .single()
+
 
     if (addError) throw addError
+
+    const newMember = newMembers?.[0]
+    if (!newMember) {
+      throw new Error('Failed to add member')
+    }
 
     return NextResponse.json({
       ok: true,
       data: {
-        profile_id: (newMember.profiles as any).id,
-        email: (newMember.profiles as any).email,
-        display_name: (newMember.profiles as any).display_name,
+        profile_id: newMember.profile_id,
+        email: newMember.email,
+        display_name: newMember.display_name,
         role: newMember.role,
         created_at: newMember.created_at,
       },
