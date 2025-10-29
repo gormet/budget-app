@@ -43,6 +43,8 @@ const createMonthSchema = z.object({
   year: z.number().int().min(2000).max(2100),
   month: z.number().int().min(1).max(12),
   title: z.string().optional(),
+  income: z.number().min(0, 'Income must be >= 0'),
+  carryOver: z.number().min(0, 'Carry over must be >= 0').optional().default(0),
 })
 
 export async function POST(request: Request) {
@@ -64,6 +66,8 @@ export async function POST(request: Request) {
         year: validated.year,
         month: validated.month,
         title: validated.title || null,
+        income: validated.income,
+        carry_over: validated.carryOver,
       })
       .select()
       .single()

@@ -74,6 +74,8 @@ export interface Database {
           year: number
           month: number
           title: string | null
+          income: number
+          carry_over: number
           created_at: string
         }
         Insert: {
@@ -83,6 +85,8 @@ export interface Database {
           year: number
           month: number
           title?: string | null
+          income: number
+          carry_over?: number
           created_at?: string
         }
         Update: {
@@ -92,6 +96,8 @@ export interface Database {
           year?: number
           month?: number
           title?: string | null
+          income?: number
+          carry_over?: number
           created_at?: string
         }
       }
@@ -125,6 +131,7 @@ export interface Database {
           name: string
           budget_amount: number
           order: number
+          is_saving: boolean
           created_at: string
         }
         Insert: {
@@ -133,6 +140,7 @@ export interface Database {
           name: string
           budget_amount?: number
           order?: number
+          is_saving?: boolean
           created_at?: string
         }
         Update: {
@@ -141,6 +149,7 @@ export interface Database {
           name?: string
           budget_amount?: number
           order?: number
+          is_saving?: boolean
           created_at?: string
         }
       }
@@ -296,5 +305,26 @@ export interface Database {
       workspace_role: 'OWNER' | 'EDITOR' | 'VIEWER'
     }
   }
+}
+
+// Additional types for application use
+export type Month = Database['public']['Tables']['months']['Row']
+
+export interface MonthTotals {
+  month_id: string
+  workspace_id: string
+  year: number
+  month: number
+  title: string | null
+  income: number
+  carry_over: number
+  total_income: number       // 1. income + carry_over
+  total_budget: number       // 2. sum of budget_items.budget_amount
+  posted: number             // 3. spend excluding reimbursement items
+  approved_reimburse: number // 4. sum of approved reimbursement_amount
+  total_spending: number     // 5. posted + approved_reimburse
+  remaining: number          // 6. total_budget - total_spending
+  unallocated: number        // 7. total_income - total_budget
+  total_saving: number       // 8. placeholder (0 for now)
 }
 

@@ -7,6 +7,7 @@ import ProgressBar from '@/components/ProgressBar'
 import Badge from '@/components/Badge'
 import { apiGET } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
+import type { MonthTotals } from '@/types/database'
 
 interface BudgetItem {
   id: string
@@ -30,13 +31,31 @@ export default function DashboardPage() {
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
   const [budgetTypes, setBudgetTypes] = useState<BudgetType[]>([])
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([])
+  const [monthTotals, setMonthTotals] = useState<MonthTotals | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (selectedMonthId) {
       loadBudget()
+      loadMonthTotals()
+    } else {
+      // Clear data when no month selected
+      setBudgetTypes([])
+      setBudgetItems([])
+      setMonthTotals(null)
     }
   }, [selectedMonthId])
+
+  // Reload data when workspace changes
+  useEffect(() => {
+    if (workspaceId) {
+      // Clear selection when workspace changes (empty string triggers auto-select in MonthSelector)
+      setSelectedMonthId('')
+      setBudgetTypes([])
+      setBudgetItems([])
+      setMonthTotals(null)
+    }
+  }, [workspaceId])
 
   async function loadBudget() {
     if (!selectedMonthId) return
@@ -53,10 +72,16 @@ export default function DashboardPage() {
     }
   }
 
-  const totalBudget = budgetItems.reduce((sum, item) => sum + Number(item.budget_amount), 0)
-  const totalPosted = budgetItems.reduce((sum, item) => sum + Number(item.posted_spend), 0)
-  const totalApprovedReimbursed = budgetItems.reduce((sum, item) => sum + Number(item.approved_reimbursed_spend), 0)
-  const totalRemaining = totalBudget - totalPosted - totalApprovedReimbursed
+  async function loadMonthTotals() {
+    if (!selectedMonthId) return
+    
+    try {
+      const response: any = await apiGET(`/api/months/${selectedMonthId}/totals`)
+      setMonthTotals(response.data)
+    } catch (error) {
+      console.error('Failed to load month totals:', error)
+    }
+  }
 
   return (
     <Layout>
@@ -72,32 +97,80 @@ export default function DashboardPage() {
 
         {loading ? (
           <div className="text-gray-500">Loading budget...</div>
-        ) : selectedMonthId ? (
+        ) : selectedMonthId && monthTotals ? (
           <>
-            {/* Summary Cards */}
+            {/* Summary Cards - 8 Metrics */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+              {/* 1. Total Income */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-sm font-medium text-gray-500 mb-2">Total Income</h3>
+                <p className="text-2xl font-bold text-green-600">
+                  RM {monthTotals.total_income.toFixed(2)}
+                </p>
+              </div>
+
+              {/* 2. Total Budget */}
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-sm font-medium text-gray-500 mb-2">Total Budget</h3>
                 <p className="text-2xl font-bold text-gray-900">
-                  RM {totalBudget.toFixed(2)}
+                  RM {monthTotals.total_budget.toFixed(2)}
                 </p>
               </div>
+
+              {/* 3. Posted */}
               <div className="bg-white rounded-lg shadow p-6">
                 <h3 className="text-sm font-medium text-gray-500 mb-2">Posted</h3>
                 <p className="text-2xl font-bold text-blue-600">
-                  RM {totalPosted.toFixed(2)}
+                  RM {monthTotals.posted.toFixed(2)}
                 </p>
               </div>
+
+              {/* 4. Approved Reimburse */}
               <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-sm font-medium text-gray-500 mb-2">Approved Reimbursed</h3>
-                <p className="text-2xl font-bold text-green-600">
-                  RM {totalApprovedReimbursed.toFixed(2)}
+                <h3 className="text-sm font-medium text-gray-500 mb-2">Approved Reimburse</h3>
+                <p className="text-2xl font-bold text-purple-600">
+                  RM {monthTotals.approved_reimburse.toFixed(2)}
                 </p>
               </div>
+
+              {/* 5. Total Spending */}
               <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-sm font-medium text-gray-500 mb-2">Remaining</h3>
-                <p className={`text-2xl font-bold ${totalRemaining < 0 ? 'text-red-600' : 'text-gray-900'}`}>
-                  RM {totalRemaining.toFixed(2)}
+                <h3 className="text-sm font-medium text-gray-500 mb-2">Total Spending</h3>
+                <p className="text-2xl font-bold text-orange-600">
+                  RM {monthTotals.total_spending.toFixed(2)}
+                </p>
+              </div>
+
+              {/* 6. Remaining */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-sm font-medium text-gray-500">Remaining</h3>
+                  {monthTotals.remaining < 0 && <Badge variant="danger">Over Budget</Badge>}
+                </div>
+                <p className={`text-2xl font-bold ${monthTotals.remaining < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+                  RM {monthTotals.remaining.toFixed(2)}
+                </p>
+              </div>
+
+              {/* 7. Unallocated */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <div className="flex items-center gap-2 mb-2">
+                  <h3 className="text-sm font-medium text-gray-500">Unallocated</h3>
+                  {monthTotals.unallocated < 0 && <Badge variant="warning">Over Allocated</Badge>}
+                </div>
+                <p className={`text-2xl font-bold ${monthTotals.unallocated < 0 ? 'text-red-600' : 'text-teal-600'}`}>
+                  RM {monthTotals.unallocated.toFixed(2)}
+                </p>
+              </div>
+
+              {/* 8. Total Saving */}
+              <div className="bg-white rounded-lg shadow p-6">
+                <h3 className="text-sm font-medium text-gray-500 mb-2">
+                  Total Saving
+                  <span className="ml-2 text-xs text-gray-400">(in Total Budget)</span>
+                </h3>
+                <p className="text-2xl font-bold text-indigo-600">
+                  RM {monthTotals.total_saving.toFixed(2)}
                 </p>
               </div>
             </div>

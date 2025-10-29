@@ -26,7 +26,8 @@ export async function GET(
         budget_type_id,
         name,
         budget_amount,
-        order
+        order,
+        is_saving
       `)
       .in('budget_type_id', types?.map(t => t.id) || [])
       .order('order')

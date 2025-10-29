@@ -43,8 +43,26 @@ export default function NewExpensePage() {
   useEffect(() => {
     if (selectedMonthId) {
       loadBudgetItems()
+    } else {
+      // Clear data when no month selected
+      setBudgetItems([])
     }
   }, [selectedMonthId])
+
+  // Clear selection when workspace changes
+  useEffect(() => {
+    if (workspaceId) {
+      setSelectedMonthId('')
+      setBudgetItems([])
+      // Reset form
+      setExpenseName('')
+      setDate(new Date().toISOString().split('T')[0])
+      setNote('')
+      setLineItems([
+        { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '' },
+      ])
+    }
+  }, [workspaceId])
 
   async function loadBudgetItems() {
     if (!selectedMonthId) return

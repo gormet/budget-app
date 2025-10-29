@@ -6,6 +6,7 @@ const updateItemSchema = z.object({
   name: z.string().min(1).optional(),
   budgetAmount: z.number().min(0).optional(),
   order: z.number().int().optional(),
+  isSaving: z.boolean().optional(),
 })
 
 export async function POST(
@@ -22,6 +23,7 @@ export async function POST(
     if (validated.name !== undefined) updates.name = validated.name
     if (validated.budgetAmount !== undefined) updates.budget_amount = validated.budgetAmount
     if (validated.order !== undefined) updates.order = validated.order
+    if (validated.isSaving !== undefined) updates.is_saving = validated.isSaving
 
     const { data: budgetItem, error } = await supabase
       .from('budget_items')

@@ -53,7 +53,25 @@ export async function apiPUT<T>(url: string, body?: unknown): Promise<T> {
   return res.json()
 }
 
-export async function apiDELETE<T>(url: string): Promise<T> {
+export async function apiPATCH<T>(url: string, body?: unknown): Promise<T> {
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: body ? JSON.stringify(body) : undefined,
+    cache: 'no-store',
+  })
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({ message: 'Request failed' }))
+    throw new Error(error.message || `HTTP ${res.status}`)
+  }
+
+  return res.json()
+}
+
+export async function apiDELETE(url: string): Promise<void> {
   const res = await fetch(url, {
     method: 'DELETE',
     headers: {
@@ -67,6 +85,9 @@ export async function apiDELETE<T>(url: string): Promise<T> {
     throw new Error(error.message || `HTTP ${res.status}`)
   }
 
-  return res.json()
+  // DELETE may return 204 No Content, so don't try to parse JSON
+  if (res.status !== 204) {
+    return res.json()
+  }
 }
 

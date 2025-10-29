@@ -7,6 +7,7 @@ const createItemSchema = z.object({
   name: z.string().min(1),
   budgetAmount: z.number().min(0),
   order: z.number().int().optional(),
+  isSaving: z.boolean().optional().default(false),
 })
 
 export async function POST(request: Request) {
@@ -15,13 +16,14 @@ export async function POST(request: Request) {
     const body = await request.json()
     const validated = createItemSchema.parse(body)
 
-    const { data: budgetItem, error } = await supabase
+    const { data: budgetItem, error} = await supabase
       .from('budget_items')
       .insert({
         budget_type_id: validated.budgetTypeId,
         name: validated.name,
         budget_amount: validated.budgetAmount,
         order: validated.order || 0,
+        is_saving: validated.isSaving,
       })
       .select()
       .single()

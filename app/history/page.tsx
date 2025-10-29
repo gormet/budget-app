@@ -42,8 +42,23 @@ export default function HistoryPage() {
   useEffect(() => {
     if (selectedMonthId) {
       loadExpenses()
+    } else {
+      // Clear data when no month selected
+      setExpenses([])
     }
   }, [selectedMonthId, searchQuery, statusFilter])
+
+  // Reload data when workspace changes
+  useEffect(() => {
+    if (workspaceId) {
+      // Clear selection when workspace changes (empty string triggers auto-select in MonthSelector)
+      setSelectedMonthId('')
+      setExpenses([])
+      setSearchQuery('')
+      setStatusFilter('')
+      setExpandedExpenseId(null)
+    }
+  }, [workspaceId])
 
   async function loadExpenses() {
     if (!selectedMonthId) return

@@ -35,8 +35,22 @@ export default function ReimbursementsPage() {
   const isOwner = workspaceRole === 'OWNER'
 
   useEffect(() => {
-    loadReimbursements()
-  }, [statusFilter, selectedMonthId])
+    if (workspaceId) {
+      loadReimbursements()
+    } else {
+      // Clear data when no workspace
+      setItems([])
+    }
+  }, [statusFilter, selectedMonthId, workspaceId])
+
+  // Clear selection when workspace changes
+  useEffect(() => {
+    if (workspaceId) {
+      setSelectedMonthId('')
+      setItems([])
+      setStatusFilter('PENDING')
+    }
+  }, [workspaceId])
 
   async function loadReimbursements() {
     setLoading(true)
