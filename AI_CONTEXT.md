@@ -2,7 +2,7 @@
 
 **Generated:** 2024-10-24 | **Updated:** 2025-10-26  
 **Project:** Production-grade multi-user budgeting web application  
-**Status:** ✅ Fully functional with workspace collaboration  
+**Status:** ✅ Fully functional with workspace collaboration + income tracking + savings  
 **Currency:** RM (Malaysian Ringgit)
 
 ---
@@ -24,16 +24,21 @@ A full-stack budgeting application with reimbursement workflow management built 
 1. **Multi-User Workspaces** - Collaborative budgeting with role-based access control
 2. **Role-Based Permissions** - OWNER (full access) | EDITOR (create/edit) | VIEWER (read-only)
 3. **Owner-Only Approvals** - Only workspace owners can approve/reject reimbursements
-4. Monthly budget management with hierarchical organization (Types → Items)
-5. Multi-line expense tracking with creator identity
-6. Reimbursement workflow (Pending → Approved/Rejected)
-7. Smart budget calculation (only approved reimbursements deduct from budget)
-8. Budget duplication between months
-9. Real-time dashboard with progress indicators
-10. Over-budget warnings
-11. Magic Link authentication (passwordless)
-12. Row-Level Security at database level with workspace membership checks
-13. Workspace member management (invite, change roles, remove)
+4. **Income & Carry Over Tracking** ⭐ NEW - Track monthly income and carry forward surplus
+5. **Savings Allocation** ⭐ NEW - Mark budget items as savings with separate tracking
+6. **8-Metric Dashboard** ⭐ NEW - Comprehensive financial overview (income, budget, spending, savings, etc.)
+7. Monthly budget management with hierarchical organization (Types → Items)
+8. Multi-line expense tracking with creator identity
+9. Reimbursement workflow (Pending → Approved/Rejected)
+10. Smart budget calculation (only approved reimbursements deduct from budget)
+11. Budget duplication between months
+12. Month editing (income/carry over) with budget-lock protection ⭐ NEW
+13. Month deletion (when no budgets exist) ⭐ NEW
+14. Real-time dashboard with progress indicators
+15. Over-budget warnings
+16. Magic Link authentication (passwordless)
+17. Row-Level Security at database level with workspace membership checks
+18. Workspace member management (invite, change roles, remove)
 
 ---
 
@@ -58,7 +63,7 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 
 ## Database Schema
 
-### Tables (10 total - includes workspace tables)
+### Tables (10 total - includes workspace tables + new columns)
 
 #### 1. profiles
 - Links to `auth.users` (Supabase Auth)
@@ -77,10 +82,12 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 - Role enum: 'OWNER', 'EDITOR', 'VIEWER'
 
 #### 4. months
-- **Workspace-based**: `workspace_id` → `workspaces.id` (NEW)
+- **Workspace-based**: `workspace_id` → `workspaces.id`
 - Legacy: `owner_id` → `profiles.id` (kept for historical reference)
 - Unique constraint: (workspace_id, year, month) - changed from owner-based
 - Fields: id, workspace_id, owner_id, year, month, title, created_at
+- **Income tracking** ⭐ NEW: `income` (NUMERIC, required, ≥0), `carry_over` (NUMERIC, default 0, ≥0)
+- **Edit Protection**: income/carry_over locked once budget items exist (trigger enforced)
 
 #### 5. budget_types
 - Parent: `month_id` → `months.id`
@@ -91,6 +98,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 - Parent: `budget_type_id` → `budget_types.id`
 - Formerly called "subcategories"
 - Fields: id, budget_type_id, name, budget_amount (NUMERIC), order, created_at
+- **Saving flag** ⭐ NEW: `is_saving` (BOOLEAN, default false, indexed)
+- Savings items included in Total Budget but tracked separately on dashboard
 
 #### 7. expenses
 - Parent: `month_id` → `months.id`
@@ -112,7 +121,7 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 - **reimburse_status**: 'NONE', 'PENDING', 'APPROVED', 'REJECTED'
 - **workspace_role** ⭐ NEW: 'OWNER', 'EDITOR', 'VIEWER'
 
-### Views (3 total)
+### Views (4 total - includes new month totals view)
 
 #### v_posted_spend
 - Aggregates non-reimbursement expense items per budget_item_id
@@ -125,6 +134,19 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 #### v_budget_item_remaining
 - Joins budget_items with both spend views
 - Calculates: `remaining = budget_amount - posted_spend - approved_reimbursed_spend`
+
+#### v_month_totals ⭐ NEW
+- Comprehensive dashboard metrics view
+- Aggregates 8 key financial metrics per month:
+  1. **Total Income** = income + carry_over
+  2. **Total Budget** = sum of all budget_items.budget_amount
+  3. **Posted** = spend excluding reimbursement items
+  4. **Approved Reimburse** = sum of approved reimbursement_amount
+  5. **Total Spending** = Posted + Approved Reimburse
+  6. **Remaining** = Total Budget - Total Spending
+  7. **Unallocated** = Total Income - Total Budget
+  8. **Total Saving** = sum of budget_amount where is_saving = true
+- Used by dashboard and month API endpoint
 
 ### Functions
 
@@ -161,6 +183,11 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 - Returns current user's role in specified workspace
 - Helper function for permission checks
 
+#### can_edit_month_income(month_uuid UUID) ⭐ NEW
+- Returns TRUE if month has no budget items yet (safe to edit income/carry_over)
+- Returns FALSE if month already has budget structure
+- Used by month edit validation
+
 #### find_profile_for_invite(email_to_find TEXT) ⭐ NEW
 - **SECURITY DEFINER function** - bypasses RLS to lookup profiles by email
 - Used by invite API to find users who aren't yet in shared workspaces
@@ -186,6 +213,12 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 - Validates: if need_reimburse=true, requires reimbursement_amount between 0 and amount
 - Auto-sets: reimburse_status to PENDING when need_reimburse=true
 - Auto-nullifies: reimbursement_amount and sets status to NONE when need_reimburse=false
+
+#### prevent_month_income_edit_if_has_budget ⭐ NEW
+- Fires BEFORE UPDATE on `months`
+- Prevents editing income or carry_over if month has any budget_types
+- Ensures financial foundation stays fixed after budget planning begins
+- Allows editing other fields (year, month, title) even with budgets
 
 ---
 
@@ -234,7 +267,9 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │   │   ├── months/
 │   │   │   ├── route.ts              # GET list, POST create
 │   │   │   └── [id]/
-│   │   │       └── duplicate/route.ts # POST duplicate
+│   │   │       ├── route.ts          # PATCH edit, DELETE month ⭐ NEW
+│   │   │       ├── duplicate/route.ts # POST duplicate
+│   │   │       └── totals/route.ts   # GET month metrics ⭐ NEW
 │   │   └── reimbursements/
 │   │       ├── route.ts              # GET list with filters
 │   │       └── [expenseItemId]/
@@ -276,7 +311,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │       ├── 05_rls_workspaces.sql     # ⭐ NEW - Workspace RLS policies
 │       ├── 06_fix_workspace_creation.sql  # ⭐ NEW - RLS fix
 │       ├── 07_workspace_creation_alternative.sql  # ⭐ NEW - Function approach
-│       └── 08_fix_infinite_recursion.sql  # ⭐ NEW - Recursion fix
+│       ├── 08_fix_infinite_recursion.sql  # ⭐ NEW - Recursion fix
+│       └── 09_add_income_carry_over.sql   # ⭐ NEW - Income tracking & savings feature
 ├── types/
 │   └── database.ts                   # TypeScript types for Supabase
 ├── middleware.ts                     # Route protection + session refresh
@@ -301,7 +337,17 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 ├── FIX_INVITE_RLS_ERROR.md           # ⭐ NEW - Invite RLS fix documentation
 ├── FIX_NOW.md                        # ⭐ NEW - Quick fix steps
 ├── GITHUB_SETUP.md                   # ⭐ NEW - GitHub push guide
-└── PUSH_TO_GITHUB.txt                # ⭐ NEW - Quick reference
+├── PUSH_TO_GITHUB.txt                # ⭐ NEW - Quick reference
+├── INCOME_TRACKING_FEATURE.md        # ⭐ NEW - Income & carry over documentation
+├── SAVING_FEATURE.md                 # ⭐ NEW - Savings allocation documentation
+├── SAVING_FEATURE_QA.md              # ⭐ NEW - QA test plan for savings
+├── SAVING_IMPLEMENTATION_SUMMARY.md  # ⭐ NEW - Savings implementation summary
+├── EDIT_DELETE_MONTH_FEATURE.md      # ⭐ NEW - Month edit/delete documentation
+├── IMPLEMENTATION_SUMMARY.md         # ⭐ NEW - Overall implementation summary
+├── REFRESH_FIX.md                    # ⭐ NEW - Page refresh fix documentation
+├── FIX_VIEW_SECURITY.sql             # ⭐ NEW - Fix view security warning + savings calc
+├── FIX_VIEW_SECURITY_ISSUE.md        # ⭐ NEW - View security warning explanation
+└── DEBUG_WORKSPACE_CREATION.md       # Workspace creation debugging
 ```
 
 ---
@@ -526,27 +572,40 @@ When inviting someone who isn't yet in any shared workspace, RLS blocks the quer
 **Solution:** Added global CSS styling for select elements with proper spacing  
 **Status:** Fixed in `app/globals.css` with custom SVG arrow and 2.5rem right padding
 
+### 11. v_month_totals View Security Warning ⚠️ NEEDS FIX
+**Warning:** "View public.v_month_totals is defined with the SECURITY DEFINER property"  
+**Cause:** Views don't have SECURITY DEFINER property (that's for functions only), warning is likely due to unusual ownership/permissions from CREATE OR REPLACE  
+**Impact:** Warning in Supabase dashboard, also Total Saving was hardcoded to 0 instead of calculated  
+**Solution:** Run `FIX_VIEW_SECURITY.sql` to drop and recreate view cleanly  
+**Bonus:** Fix also implements actual Total Saving calculation from is_saving budget items  
+**Status:** Fix created - see FIX_VIEW_SECURITY_ISSUE.md for details
+
 ---
 
 ## Current State
 
 ### ✅ Completed Features
-1. **Multi-user workspaces** with role-based access control ⭐ NEW
-2. **Workspace member management** (invite, change roles, remove) ⭐ NEW
-3. **Owner-only reimbursement approvals** (enforced at DB level) ⭐ NEW
-4. **Creator identity tracking** on expenses ⭐ NEW
-5. User authentication (Magic Link)
-6. Month management (create, list, duplicate) - now workspace-aware
-7. Budget structure (types + items with CRUD)
-8. Expense creation (multi-line with reimbursement)
-9. Reimbursement workflow (approve/reject)
-10. Dashboard with real-time calculations
-11. History view with filters and creator names
-12. Currency display (RM)
-13. Row-Level Security (all tables) - workspace-based
-14. Mobile-responsive UI
-15. **Workspace switcher** in navigation ⭐ NEW
-16. **Role badge** display ⭐ NEW
+1. **Multi-user workspaces** with role-based access control
+2. **Workspace member management** (invite, change roles, remove)
+3. **Owner-only reimbursement approvals** (enforced at DB level)
+4. **Creator identity tracking** on expenses
+5. **Income & carry over tracking** per month ⭐ NEW (Oct 26)
+6. **8-metric dashboard** (income, budget, spending, unallocated, savings, etc.) ⭐ NEW (Oct 26)
+7. **Savings allocation** (mark budget items as savings) ⭐ NEW (Oct 26)
+8. **Month editing** with budget-lock protection ⭐ NEW (Oct 26)
+9. **Month deletion** when no budgets exist ⭐ NEW (Oct 26)
+10. User authentication (Magic Link)
+11. Month management (create, list, duplicate, edit, delete) - workspace-aware
+12. Budget structure (types + items with CRUD + savings flag)
+13. Expense creation (multi-line with reimbursement)
+14. Reimbursement workflow (approve/reject)
+15. Dashboard with real-time calculations and metrics
+16. History view with filters and creator names
+17. Currency display (RM)
+18. Row-Level Security (all tables) - workspace-based
+19. Mobile-responsive UI with improved dropdown styling
+20. **Workspace switcher** in navigation
+21. **Role badge** display
 
 ### 🎯 Production Ready
 - All SQL migrations run successfully (including workspace migrations)
@@ -573,25 +632,28 @@ When inviting someone who isn't yet in any shared workspace, RLS blocks the quer
 ## Areas for Future Enhancement
 
 ### Potential Features (Not Implemented)
-1. **Magic Link Invitations:** Email invites with signup link for new users
-2. **Workspace Activity Feed:** Real-time feed of changes in workspace
-3. **Comprehensive Audit Log:** Track all changes with timestamps and actors
-4. **Workspace Templates:** Pre-built budget structures (Personal, Business, etc.)
-5. **Workspace Settings:** Currency, timezone, fiscal year customization per workspace
-6. **Attachments Upload:** `/api/attachments/upload` endpoint exists but requires Vercel Blob token
-7. **Budget Item Reordering:** Drag-and-drop for sorting types/items
-8. **Export to CSV/Excel:** Budget and expense reports
-9. **Recurring Expenses:** Templates for monthly recurring items
-10. **Multi-currency Support:** Handle multiple currencies per workspace
-11. **Charts & Analytics:** Visualizations of spending patterns
-12. **Budget vs Actual Reports:** Monthly comparison views
-13. **Email Notifications:** Alerts for over-budget, pending reimbursements, new invites
-14. **Comments/Discussions:** Comment threads on expenses
-15. **Mobile App:** React Native or PWA version
-16. **Dark Mode:** Theme toggle
-17. **Undo/Redo:** For budget edits
-18. **Bulk Operations:** Bulk invite, bulk role changes
-19. **Workspace Archiving:** Archive old workspaces
+1. **Expense Reassignment to Savings:** Allow moving expense items into savings category
+2. **Auto Carry-Over Calculation:** Automatically calculate carry_over from previous month's surplus
+3. **Budget Templates:** Save and reuse budget structures across months
+4. **Magic Link Invitations:** Email invites with signup link for new users
+5. **Workspace Activity Feed:** Real-time feed of changes in workspace
+6. **Comprehensive Audit Log:** Track all changes with timestamps and actors
+7. **Workspace Templates:** Pre-built budget structures (Personal, Business, etc.)
+8. **Workspace Settings:** Currency, timezone, fiscal year customization per workspace
+9. **Attachments Upload:** `/api/attachments/upload` endpoint exists but requires Vercel Blob token
+10. **Budget Item Reordering:** Drag-and-drop for sorting types/items
+11. **Export to CSV/Excel:** Budget and expense reports with metrics
+12. **Recurring Expenses:** Templates for monthly recurring items
+13. **Multi-currency Support:** Handle multiple currencies per workspace
+14. **Charts & Analytics:** Visualizations of spending patterns and trends
+15. **Budget vs Actual Reports:** Monthly comparison views
+16. **Email Notifications:** Alerts for over-budget, pending reimbursements, new invites
+17. **Comments/Discussions:** Comment threads on expenses
+18. **Mobile App:** React Native or PWA version
+19. **Dark Mode:** Theme toggle
+20. **Undo/Redo:** For budget edits
+21. **Bulk Operations:** Bulk invite, bulk role changes
+22. **Workspace Archiving:** Archive old workspaces
 
 ### Code Quality Improvements
 1. Add comprehensive error boundaries
@@ -641,21 +703,24 @@ Already run in Supabase:
 1. ✅ `01_schema.sql` - Core tables and triggers
 2. ✅ `02_constraints_views.sql` - Views and functions
 3. ✅ `03_rls.sql` - Security policies (owner-based)
-4. ✅ `04_workspaces.sql` - Workspace tables and backfill migration ⭐ NEW
-5. ✅ `05_rls_workspaces.sql` - Workspace-based RLS policies ⭐ NEW
-6. ✅ `COMPLETE_FIX.sql` - Fixes for infinite recursion and workspace creation ⭐ NEW
+4. ✅ `04_workspaces.sql` - Workspace tables and backfill migration
+5. ✅ `05_rls_workspaces.sql` - Workspace-based RLS policies
+6. ✅ `COMPLETE_FIX.sql` - Fixes for infinite recursion and workspace creation
+7. ✅ `FIX_MEMBERS_API.sql` - Adds display_name column and fixes get_workspace_members()
+8. ✅ `FIX_INVITE_PROFILE_LOOKUP.sql` - Adds SECURITY DEFINER functions for invite
+9. ✅ `09_add_income_carry_over.sql` - Income tracking, savings, dashboard metrics ⭐ NEW (Oct 26)
 
 **Additional migration files** (for reference/troubleshooting):
 - `06_fix_workspace_creation.sql` - RLS policy fix
 - `07_workspace_creation_alternative.sql` - Alternative creation method
 - `08_fix_infinite_recursion.sql` - Fixes circular RLS references
-- `FIX_MEMBERS_API.sql` - Adds display_name column and fixes get_workspace_members() ⭐ NEW
-- `FIX_INVITE_PROFILE_LOOKUP.sql` - Adds SECURITY DEFINER functions for invite ⭐ NEW
 
 **Important:** 
 - Run `COMPLETE_FIX.sql` if experiencing workspace loading issues
 - Run `FIX_MEMBERS_API.sql` if members page shows errors
 - Run `FIX_INVITE_PROFILE_LOOKUP.sql` if invite functionality fails
+- Run `09_add_income_carry_over.sql` for income tracking and savings features
+- Run `FIX_VIEW_SECURITY.sql` to fix view security warning and enable savings calculation
 
 ---
 
@@ -677,7 +742,10 @@ Already run in Supabase:
 
 ### Months ⭐ UPDATED
 - `GET /api/months?workspaceId=X` → List months (filtered by workspace)
-- `POST /api/months` → Create new month (body: {workspaceId, year, month, title?})
+- `POST /api/months` → Create new month (body: {workspaceId, year, month, title, income, carryOver?})
+- `PATCH /api/months/:id` → Edit month (body: {year?, month?, title?, income?, carryOver?}) ⭐ NEW
+- `DELETE /api/months/:id` → Delete month (only if no budget items exist) ⭐ NEW
+- `GET /api/months/:id/totals` → Get 8-metric dashboard data ⭐ NEW
 - `POST /api/months/:id/duplicate` → Duplicate (body: {targetYear, targetMonth, title?})
 
 ### Budget
@@ -685,9 +753,10 @@ Already run in Supabase:
 - `POST /api/budget-types` → Create (body: {monthId, name, order?})
 - `POST /api/budget-types/:id/update` → Update (body: {name?, order?})
 - `POST /api/budget-types/:id/delete` → Delete
-- `POST /api/budget-items` → Create (body: {budgetTypeId, name, budgetAmount, order?})
+- `POST /api/budget-items` → Create (body: {budgetTypeId, name, budgetAmount, order?, isSaving?}) ⭐ UPDATED
 - `POST /api/budget-items/:id/update` → Update (body: {name?, budgetAmount?, order?})
 - `POST /api/budget-items/:id/delete` → Delete
+- `POST /api/budget-items/:id/preview-toggle` → Toggle is_saving flag ⭐ NEW
 
 ### Expenses ⭐ UPDATED
 - `GET /api/expenses?monthId=X&q=search&status=PENDING` → List with filters + creator info
@@ -879,7 +948,7 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 
 **Files Created:** 18 new files (components, APIs, migrations, documentation)
 **Files Updated:** 14 files (pages, components, types, APIs, styles)
-**Total Commits:** 2 commits ready to push
+**Total Commits:** 3 commits (workspace + invite fixes + income/savings features)
 
 ### Invite Functionality Fixes (2025-10-26) ⭐
 **Problem:** Two RLS-related errors prevented inviting users to workspaces
@@ -913,25 +982,68 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 - Files: `app/globals.css`
 - Impact: Improved UX across all dropdown fields (month selector, workspace switcher, role selectors)
 
+### Income & Dashboard Features (2025-10-26) ⭐
+**Major Feature:** Comprehensive income tracking, savings allocation, and 8-metric dashboard
+
+**What Was Built:**
+1. ✅ Income & Carry Over columns added to months table
+2. ✅ `v_month_totals` view with 8 financial metrics
+3. ✅ Dashboard redesign with metric cards
+4. ✅ Savings allocation (is_saving flag on budget_items)
+5. ✅ Month editing with budget-lock protection (trigger enforced)
+6. ✅ Month deletion (only when no budgets exist)
+7. ✅ API endpoints for month edit, delete, and metrics
+8. ✅ Budget item savings toggle functionality
+9. ✅ Comprehensive validation and error handling
+
+**8 Dashboard Metrics:**
+1. Total Income (income + carry_over)
+2. Total Budget (sum of all budget items)
+3. Posted (non-reimbursement spending)
+4. Approved Reimburse (approved reimbursements)
+5. Total Spending (Posted + Approved Reimburse)
+6. Remaining (Total Budget - Total Spending)
+7. Unallocated (Total Income - Total Budget)
+8. Total Saving (sum of savings-flagged items)
+
+**Business Rules:**
+- Income/carry_over required on month creation
+- Income/carry_over locked after first budget item created
+- Months can only be deleted if empty (no budget types)
+- Savings items count toward Total Budget
+- All calculations real-time via database views
+
+**Files Created/Updated:**
+- SQL Migration: `09_add_income_carry_over.sql`
+- Documentation: INCOME_TRACKING_FEATURE.md, SAVING_FEATURE.md, EDIT_DELETE_MONTH_FEATURE.md
+- API Routes: 3 new/updated routes (month edit, delete, totals, preview-toggle)
+- Pages: Dashboard, Budget page, Month Selector
+- QA: SAVING_FEATURE_QA.md with comprehensive test plan
+
 ### Final Status
 ✅ Fully functional multi-user workspace system
 ✅ Invite functionality working (RLS issues resolved)
+✅ Income tracking and savings features complete
+✅ 8-metric dashboard with real-time calculations
+✅ Month editing with safety guards (budget-lock)
 ✅ Tested with multiple users and roles
-✅ UI polished (dropdown spacing fixed)
+✅ UI polished (dropdown spacing, metric cards)
 ✅ Ready for GitHub push
 ✅ Running locally on port 3000
 
 ### Next Session Recommendations
 1. ✅ **Push to GitHub** (setup complete - see GITHUB_SETUP.md)
-2. Test member management page edge cases
-3. Implement Magic Link email invitations (Supabase email templates)
-4. Add workspace activity feed
-5. Implement file attachments (Vercel Blob setup)
-6. Add workspace settings page
-7. Add audit log for changes
-8. Implement export to CSV
-9. Add charts/visualizations
-10. Deploy to Vercel production
+2. Implement expense reassignment to savings (future enhancement)
+3. Add carry-over auto-calculation from previous month
+4. Test month editing edge cases
+5. Implement Magic Link email invitations (Supabase email templates)
+6. Add workspace activity feed
+7. Implement file attachments (Vercel Blob setup)
+8. Add workspace settings page
+9. Add audit log for changes
+10. Implement export to CSV with metrics
+11. Add charts/visualizations for spending trends
+12. Deploy to Vercel production
 
 ---
 
