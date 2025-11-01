@@ -286,6 +286,13 @@ export default function BudgetPage() {
     }
   )
 
+  // Calculate total budget amount for each type
+  const getTypeTotalBudget = (typeId: string) => {
+    return budgetItems
+      .filter(item => item.budget_type_id === typeId)
+      .reduce((sum, item) => sum + item.budget_amount, 0)
+  }
+
   return (
     <Layout>
       <div>
@@ -354,28 +361,35 @@ export default function BudgetPage() {
                           </button>
                         </div>
                       ) : (
-                        <div className="flex items-center justify-between">
-                          <span className="font-medium">{type.name}</span>
-                          <div className="flex gap-2">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                setEditingTypeId(type.id)
-                                setEditTypeName(type.name)
-                              }}
-                              className="text-blue-600 hover:text-blue-700 text-sm"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation()
-                                handleDeleteType(type.id)
-                              }}
-                              className="text-red-600 hover:text-red-700 text-sm"
-                            >
-                              Delete
-                            </button>
+                        <div className="flex flex-col">
+                          <div className="flex items-center justify-between">
+                            <span className="font-medium">{type.name}</span>
+                            {canEdit && (
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setEditingTypeId(type.id)
+                                    setEditTypeName(type.name)
+                                  }}
+                                  className="text-blue-600 hover:text-blue-700 text-sm"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    handleDeleteType(type.id)
+                                  }}
+                                  className="text-red-600 hover:text-red-700 text-sm"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          <div className="mt-1 text-sm text-gray-600">
+                            Total: <span className="font-semibold text-gray-900">RM {getTypeTotalBudget(type.id).toFixed(2)}</span>
                           </div>
                         </div>
                       )}
@@ -383,21 +397,36 @@ export default function BudgetPage() {
                   ))}
                 </div>
 
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newTypeName}
-                    onChange={(e) => setNewTypeName(e.target.value)}
-                    placeholder="New type name"
-                    className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
-                  />
-                  <button
-                    onClick={handleCreateType}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
-                  >
-                    Add
-                  </button>
-                </div>
+                {budgetTypes.length > 0 && (
+                  <div className="mb-4 pt-4 border-t border-gray-200">
+                    <div className="flex items-center justify-between p-3 bg-blue-50 rounded-md">
+                      <span className="font-semibold text-gray-900">Grand Total:</span>
+                      <span className="text-lg font-bold text-blue-700">
+                        RM {budgetTypes.reduce((sum, type) => sum + getTypeTotalBudget(type.id), 0).toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {canEdit && (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newTypeName}
+                      onChange={(e) => setNewTypeName(e.target.value)}
+                      placeholder="New type name"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md"
+                      disabled={!canEdit}
+                    />
+                    <button
+                      onClick={handleCreateType}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                      disabled={!canEdit}
+                    >
+                      Add
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -543,6 +572,18 @@ export default function BudgetPage() {
                             </tr>
                           ))}
                         </tbody>
+                        <tfoot className="bg-gray-50 border-t-2 border-gray-300">
+                          <tr>
+                            <td className="px-4 py-3 font-semibold text-gray-900">
+                              Total for this type
+                            </td>
+                            <td className="px-4 py-3 font-semibold text-gray-900">
+                              RM {selectedTypeItems.reduce((sum, item) => sum + item.budget_amount, 0).toFixed(2)}
+                            </td>
+                            <td className="px-4 py-3"></td>
+                            <td className="px-4 py-3"></td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
 

@@ -194,11 +194,19 @@ export default function DashboardPage() {
                       
                       if (typeItems.length === 0) return null
 
+                      // Calculate type total budget
+                      const typeTotalBudget = typeItems.reduce((sum, item) => sum + item.budget_amount, 0)
+
                       return (
                         <div key={type.id}>
-                          <h3 className="text-md font-semibold text-gray-700 mb-3">
-                            {type.name}
-                          </h3>
+                          <div className="flex items-center justify-between mb-3">
+                            <h3 className="text-md font-semibold text-gray-700">
+                              {type.name}
+                            </h3>
+                            <span className="text-sm text-gray-600">
+                              Total: <span className="font-semibold text-gray-900">RM {typeTotalBudget.toFixed(2)}</span>
+                            </span>
+                          </div>
                           <div className="space-y-3">
                             {typeItems.map((item) => (
                               <div
