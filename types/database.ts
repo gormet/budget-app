@@ -325,6 +325,6 @@ export interface MonthTotals {
   total_spending: number     // 5. posted + approved_reimburse
   remaining: number          // 6. total_budget - total_spending
   unallocated: number        // 7. total_income - total_budget
-  total_saving: number       // 8. placeholder (0 for now)
+  total_saving: number       // 8. savings budget - savings spend (net savings)
 }
 

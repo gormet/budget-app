@@ -146,6 +146,21 @@ export default function ReimbursementsPage() {
           </div>
         </div>
 
+        {/* Total Summary for Pending */}
+        {statusFilter === 'PENDING' && items.length > 0 && (
+          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-medium text-amber-900">Total Pending Reimbursements</h3>
+                <Badge variant="warning">{items.length} item{items.length !== 1 ? 's' : ''}</Badge>
+              </div>
+              <p className="text-2xl font-bold text-amber-900">
+                RM {items.reduce((sum, item) => sum + item.reimbursement_amount, 0).toFixed(2)}
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Reimbursements Table */}
         <div className="bg-white rounded-lg shadow overflow-hidden">
           {loading ? (

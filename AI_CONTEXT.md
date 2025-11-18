@@ -26,7 +26,7 @@ A full-stack budgeting application with reimbursement workflow management built 
 3. **Owner-Only Approvals** - Only workspace owners can approve/reject reimbursements
 4. **Income & Carry Over Tracking** ⭐ NEW - Track monthly income and carry forward surplus
 5. **Savings Allocation** ⭐ NEW - Mark budget items as savings with separate tracking
-6. **8-Metric Dashboard** ⭐ NEW - Comprehensive financial overview (income, budget, spending, savings, etc.)
+6. **9-Metric Dashboard** ⭐ NEW - Comprehensive financial overview (income, budget, spending, savings, pending, etc.)
 7. Monthly budget management with hierarchical organization (Types → Items)
 8. Multi-line expense tracking with creator identity
 9. Reimbursement workflow (Pending → Approved/Rejected)
@@ -137,7 +137,7 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 
 #### v_month_totals ⭐ NEW
 - Comprehensive dashboard metrics view
-- Aggregates 8 key financial metrics per month:
+- Aggregates 9 key financial metrics per month:
   1. **Total Income** = income + carry_over
   2. **Total Budget** = sum of all budget_items.budget_amount
   3. **Posted** = spend excluding reimbursement items
@@ -145,7 +145,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
   5. **Total Spending** = Posted + Approved Reimburse
   6. **Remaining** = Total Budget - Total Spending
   7. **Unallocated** = Total Income - Total Budget
-  8. **Total Saving** = sum of budget_amount where is_saving = true
+  8. **Total Saving** = savings budget - savings spend (net savings)
+  9. **Pending Reimburse** = sum of pending reimbursement_amount ⭐ NEW
 - Used by dashboard and month API endpoint
 
 ### Functions
@@ -590,7 +591,7 @@ When inviting someone who isn't yet in any shared workspace, RLS blocks the quer
 3. **Owner-only reimbursement approvals** (enforced at DB level)
 4. **Creator identity tracking** on expenses
 5. **Income & carry over tracking** per month ⭐ NEW (Oct 26)
-6. **8-metric dashboard** (income, budget, spending, unallocated, savings, etc.) ⭐ NEW (Oct 26)
+6. **9-metric dashboard** (income, budget, spending, unallocated, savings, pending) ⭐ NEW (Oct 26)
 7. **Savings allocation** (mark budget items as savings) ⭐ NEW (Oct 26)
 8. **Month editing** with budget-lock protection ⭐ NEW (Oct 26)
 9. **Month deletion** when no budgets exist ⭐ NEW (Oct 26)
@@ -987,7 +988,7 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 
 **What Was Built:**
 1. ✅ Income & Carry Over columns added to months table
-2. ✅ `v_month_totals` view with 8 financial metrics
+2. ✅ `v_month_totals` view with 9 financial metrics
 3. ✅ Dashboard redesign with metric cards
 4. ✅ Savings allocation (is_saving flag on budget_items)
 5. ✅ Month editing with budget-lock protection (trigger enforced)
@@ -996,7 +997,7 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 8. ✅ Budget item savings toggle functionality
 9. ✅ Comprehensive validation and error handling
 
-**8 Dashboard Metrics:**
+**9 Dashboard Metrics:**
 1. Total Income (income + carry_over)
 2. Total Budget (sum of all budget items)
 3. Posted (non-reimbursement spending)
@@ -1004,7 +1005,8 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 5. Total Spending (Posted + Approved Reimburse)
 6. Remaining (Total Budget - Total Spending)
 7. Unallocated (Total Income - Total Budget)
-8. Total Saving (sum of savings-flagged items)
+8. Total Saving (net savings after spending)
+9. Pending Reimburse (awaiting approval) ⭐ NEW
 
 **Business Rules:**
 - Income/carry_over required on month creation

@@ -37,31 +37,29 @@ Run `FIX_VIEW_SECURITY.sql` which:
 
 ## What Changed
 
-The fix also includes the **correct Total Saving calculation** that was missing in the original:
+The fix includes **three important updates**:
 
-**Before** (in original migration):
+**1. Correct Total Saving Calculation** (was hardcoded to 0):
 ```sql
--- 8. Total Saving = 0 (placeholder for future implementation)
-0::NUMERIC AS total_saving
+-- 8. Total Saving = Net Savings (Budget - Spent)
+(COALESCE(s.savings_budget, 0) - COALESCE(ss.savings_spend, 0)) AS total_saving
 ```
+Now calculates actual net savings after expenses!
 
-**After** (in the fix):
+**2. New Pending Reimburse Metric**:
 ```sql
--- 8. Total Saving = sum of savings items
-COALESCE(s.total_saving, 0) AS total_saving
-...
-LEFT JOIN (
-  SELECT bt.month_id, SUM(bi.budget_amount)::NUMERIC AS total_saving
-  FROM public.budget_items bi
-  JOIN public.budget_types bt ON bt.id = bi.budget_type_id
-  WHERE bi.is_saving = TRUE
-  GROUP BY bt.month_id
-) s ON s.month_id = m.id;
+-- 9. Pending Reimburse = sum of pending reimbursement_amount
+COALESCE(pr.pending_reimburse, 0) AS pending_reimburse
 ```
+Shows total amount awaiting reimbursement approval.
 
-So this fix does **two things**:
+**3. Security Warning Fix**:
+Drops and recreates view cleanly to remove SECURITY DEFINER warning.
+
+So this fix does **three things**:
 1. ✅ Removes the security warning
-2. ✅ Implements the actual Total Saving calculation (was hardcoded to 0 before!)
+2. ✅ Implements actual Total Saving calculation (net savings)
+3. ✅ Adds 9th metric for Pending Reimbursements
 
 ## Why Views Don't Need SECURITY DEFINER
 
@@ -79,10 +77,23 @@ So this fix does **two things**:
 ## After the Fix
 
 Your dashboard should:
-- ✅ Show all 8 metrics correctly
-- ✅ Display actual Total Saving values (not just 0)
+- ✅ Show all 9 metrics correctly
+- ✅ Display actual Total Saving values (net savings after spending)
+- ✅ Display Pending Reimburse amounts (awaiting approval)
 - ✅ No more security warnings in Supabase
 - ✅ RLS still enforced (users only see their workspace's months)
+
+## The 9 Metrics
+
+1. **Total Income** - income + carry_over
+2. **Total Budget** - sum of all budget items
+3. **Posted** - non-reimbursement spending
+4. **Approved Reimburse** - approved reimbursements
+5. **Total Spending** - Posted + Approved Reimburse
+6. **Remaining** - Total Budget - Total Spending
+7. **Unallocated** - Total Income - Total Budget
+8. **Total Saving** - savings budget - savings spend (net)
+9. **Pending Reimburse** - sum of pending reimbursements ⭐ NEW
 
 ---
 
