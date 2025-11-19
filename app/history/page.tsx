@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import Layout from '@/components/Layout'
 import MonthSelector from '@/components/MonthSelector'
 import Badge from '@/components/Badge'
@@ -44,6 +45,7 @@ interface Expense {
 }
 
 export default function HistoryPage() {
+  const searchParams = useSearchParams()
   const { workspaceId, workspaceRole } = useWorkspace()
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
   const [expenses, setExpenses] = useState<Expense[]>([])
@@ -55,10 +57,33 @@ export default function HistoryPage() {
   const [budgetTypeFilter, setBudgetTypeFilter] = useState<string>('')
   const [budgetItemFilter, setBudgetItemFilter] = useState<string>('')
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null)
+  const [urlParamsApplied, setUrlParamsApplied] = useState(false)
+
+  // Apply URL params for month selection on initial load
+  useEffect(() => {
+    if (searchParams && !selectedMonthId) {
+      const monthIdParam = searchParams.get('monthId')
+      if (monthIdParam) {
+        setSelectedMonthId(monthIdParam)
+      }
+    }
+  }, [searchParams])
+
+  // Apply URL params when budget data is loaded
+  useEffect(() => {
+    if (!urlParamsApplied && budgetTypes.length > 0 && searchParams) {
+      const budgetTypeId = searchParams.get('budgetTypeId')
+      if (budgetTypeId) {
+        setBudgetTypeFilter(budgetTypeId)
+        setUrlParamsApplied(true)
+      }
+    }
+  }, [budgetTypes, searchParams, urlParamsApplied])
 
   useEffect(() => {
     if (selectedMonthId) {
       loadBudgetData()
+      setUrlParamsApplied(false) // Reset flag when month changes
     } else {
       // Clear data when no month selected
       setExpenses([])
@@ -87,6 +112,7 @@ export default function HistoryPage() {
       setBudgetTypeFilter('')
       setBudgetItemFilter('')
       setExpandedExpenseId(null)
+      setUrlParamsApplied(false)
     }
   }, [workspaceId])
 

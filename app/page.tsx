@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import MonthSelector from '@/components/MonthSelector'
 import ProgressBar from '@/components/ProgressBar'
@@ -27,6 +28,7 @@ interface BudgetType {
 }
 
 export default function DashboardPage() {
+  const router = useRouter()
   const { workspaceId, workspaceRole } = useWorkspace()
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
   const [budgetTypes, setBudgetTypes] = useState<BudgetType[]>([])
@@ -200,9 +202,17 @@ export default function DashboardPage() {
                       return (
                         <div key={type.id}>
                           <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-md font-semibold text-gray-700">
-                              {type.name}
-                            </h3>
+                            <div>
+                              <h3 className="text-md font-semibold text-gray-700">
+                                {type.name}
+                              </h3>
+                              <button
+                                onClick={() => router.push(`/history?monthId=${selectedMonthId}&budgetTypeId=${type.id}`)}
+                                className="mt-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
+                              >
+                                View All Transactions →
+                              </button>
+                            </div>
                             <span className="text-sm text-gray-600">
                               Total: <span className="font-semibold text-gray-900">RM {typeTotalBudget.toFixed(2)}</span>
                             </span>

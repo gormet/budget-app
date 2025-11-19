@@ -27,8 +27,10 @@ A full-stack budgeting application with reimbursement workflow management built 
 4. **Income & Carry Over Tracking** ⭐ NEW - Track monthly income and carry forward surplus
 5. **Savings Allocation** ⭐ NEW - Mark budget items as savings with separate tracking
 6. **9-Metric Dashboard** ⭐ NEW - Comprehensive financial overview (income, budget, spending, savings, pending, etc.)
-7. Monthly budget management with hierarchical organization (Types → Items)
-8. Multi-line expense tracking with creator identity
+7. **Expense Total Tracking** ⭐ NEW - Automatic calculation and display of expense totals
+8. **Advanced Filtering** ⭐ NEW - Filter expenses by budget type and budget item
+9. Monthly budget management with hierarchical organization (Types → Items)
+10. Multi-line expense tracking with creator identity
 9. Reimbursement workflow (Pending → Approved/Rejected)
 10. Smart budget calculation (only approved reimbursements deduct from budget)
 11. Budget duplication between months
@@ -106,6 +108,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 - Creator: `created_by` → `profiles.id`
 - Soft delete: `deleted_at` (nullable)
 - Fields: id, month_id, date, expense_name (required), note (text), created_by, created_at, updated_at, deleted_at
+- **Total amount** ⭐ NEW: `total_amount` (NUMERIC, required, ≥0, indexed)
+- Automatically calculated from sum of expense items, displayed on forms and history
 
 #### 8. expense_items
 - Parent: `expense_id` → `expenses.id`
@@ -283,11 +287,11 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │   │   └── page.tsx                  # Budget editor (types + items)
 │   ├── expense/
 │   │   └── new/
-│   │       └── page.tsx              # New expense form (multi-line)
+│   │       └── page.tsx              # New expense form (multi-line + total display) ⭐ UPDATED
 │   ├── history/
-│   │   └── page.tsx                  # Expense history with accordion
+│   │   └── page.tsx                  # Expense history (accordion + total + filters) ⭐ UPDATED
 │   ├── reimbursements/
-│   │   └── page.tsx                  # Reimbursement approval interface
+│   │   └── page.tsx                  # Reimbursement approval (with pending total) ⭐ UPDATED
 │   ├── layout.tsx                    # Root layout
 │   └── page.tsx                      # Dashboard (home)
 ├── components/
@@ -313,7 +317,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │       ├── 06_fix_workspace_creation.sql  # ⭐ NEW - RLS fix
 │       ├── 07_workspace_creation_alternative.sql  # ⭐ NEW - Function approach
 │       ├── 08_fix_infinite_recursion.sql  # ⭐ NEW - Recursion fix
-│       └── 09_add_income_carry_over.sql   # ⭐ NEW - Income tracking & savings feature
+│       ├── 09_add_income_carry_over.sql   # ⭐ NEW - Income tracking & savings feature
+│       └── 10_add_expense_total.sql       # ⭐ NEW - Expense total amount tracking
 ├── types/
 │   └── database.ts                   # TypeScript types for Supabase
 ├── middleware.ts                     # Route protection + session refresh
@@ -595,13 +600,16 @@ When inviting someone who isn't yet in any shared workspace, RLS blocks the quer
 7. **Savings allocation** (mark budget items as savings) ⭐ NEW (Oct 26)
 8. **Month editing** with budget-lock protection ⭐ NEW (Oct 26)
 9. **Month deletion** when no budgets exist ⭐ NEW (Oct 26)
+9a. **Expense total tracking** (auto-calculated and saved) ⭐ NEW (Nov 19)
+9b. **Advanced expense filtering** (by budget type/item) ⭐ NEW (Nov 19)
+9c. **Pending reimbursement total** on reimbursements page ⭐ NEW (Nov 19)
 10. User authentication (Magic Link)
 11. Month management (create, list, duplicate, edit, delete) - workspace-aware
 12. Budget structure (types + items with CRUD + savings flag)
-13. Expense creation (multi-line with reimbursement)
-14. Reimbursement workflow (approve/reject)
+13. Expense creation (multi-line with reimbursement + total display)
+14. Reimbursement workflow (approve/reject with total summary)
 15. Dashboard with real-time calculations and metrics
-16. History view with filters and creator names
+16. History view with advanced filters (search, status, budget type, budget item) + total display
 17. Currency display (RM)
 18. Row-Level Security (all tables) - workspace-based
 19. Mobile-responsive UI with improved dropdown styling
@@ -710,6 +718,7 @@ Already run in Supabase:
 7. ✅ `FIX_MEMBERS_API.sql` - Adds display_name column and fixes get_workspace_members()
 8. ✅ `FIX_INVITE_PROFILE_LOOKUP.sql` - Adds SECURITY DEFINER functions for invite
 9. ✅ `09_add_income_carry_over.sql` - Income tracking, savings, dashboard metrics ⭐ NEW (Oct 26)
+10. ✅ `10_add_expense_total.sql` - Adds total_amount column to expenses table ⭐ NEW (Nov 19)
 
 **Additional migration files** (for reference/troubleshooting):
 - `06_fix_workspace_creation.sql` - RLS policy fix
@@ -722,6 +731,7 @@ Already run in Supabase:
 - Run `FIX_INVITE_PROFILE_LOOKUP.sql` if invite functionality fails
 - Run `09_add_income_carry_over.sql` for income tracking and savings features
 - Run `FIX_VIEW_SECURITY.sql` to fix view security warning and enable savings calculation
+- Run `10_add_expense_total.sql` to add expense total tracking
 
 ---
 
@@ -761,7 +771,7 @@ Already run in Supabase:
 
 ### Expenses ⭐ UPDATED
 - `GET /api/expenses?monthId=X&q=search&status=PENDING` → List with filters + creator info
-- `POST /api/expenses` → Create with line items (see schema below)
+- `POST /api/expenses` → Create with line items + total amount (body includes totalAmount)
 
 ### Reimbursements ⭐ UPDATED
 - `GET /api/reimbursements?status=PENDING&monthId=X` → List items
@@ -783,6 +793,7 @@ POST /api/expenses
   date: "2024-10-24",
   expenseName: "Office Supplies",
   note: "Printer paper and toner",
+  totalAmount: 195.00,  // ⭐ NEW - Sum of all line item amounts
   items: [
     {
       itemName: "Paper",
@@ -1033,19 +1044,62 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 ✅ Ready for GitHub push
 ✅ Running locally on port 3000
 
+### Expense Tracking Enhancements (2025-11-19) ⭐
+**Major Feature:** Expense total tracking and advanced filtering
+
+**What Was Built:**
+1. ✅ Added `total_amount` column to expenses table
+2. ✅ Auto-calculation of total from line items on expense form
+3. ✅ Total display prominently shown on new expense form
+4. ✅ Total amount saved to database when creating expenses
+5. ✅ Total displayed per expense in history view
+6. ✅ Advanced filtering on history page:
+   - Filter by Budget Type (shows all expenses with items in that type)
+   - Filter by specific Budget Item
+   - Smart filtering: budget items dropdown filters by selected type
+   - Active filters display with clear all button
+7. ✅ Pending reimbursement total summary on reimbursements page
+8. ✅ Bug fix: Budget type filter now correctly filters expenses
+9. ✅ TypeScript types updated across the board
+
+**User Experience Improvements:**
+- Real-time total calculation as user enters amounts
+- Prominent total display before submit button
+- Total shows in expense list for quick scanning
+- Cascading filters (type → item) for better UX
+- Visual active filters with badges
+- One-click clear all filters
+
+**Technical Implementation:**
+- Client-side calculation for instant feedback
+- Server-side validation and storage
+- Database column with index for performance
+- Existing expenses backfilled with calculated totals
+- Client-side filtering for budget type/item (fast, no extra API calls)
+
+**Files Modified:**
+1. ✅ `10_add_expense_total.sql` - Database migration
+2. ✅ `app/expense/new/page.tsx` - Form with total display
+3. ✅ `app/history/page.tsx` - Advanced filters + total display
+4. ✅ `app/reimbursements/page.tsx` - Pending total summary
+5. ✅ `app/api/expenses/route.ts` - API accepts totalAmount
+6. ✅ `types/database.ts` - Updated expense types
+
 ### Next Session Recommendations
 1. ✅ **Push to GitHub** (setup complete - see GITHUB_SETUP.md)
-2. Implement expense reassignment to savings (future enhancement)
-3. Add carry-over auto-calculation from previous month
-4. Test month editing edge cases
-5. Implement Magic Link email invitations (Supabase email templates)
-6. Add workspace activity feed
-7. Implement file attachments (Vercel Blob setup)
-8. Add workspace settings page
-9. Add audit log for changes
-10. Implement export to CSV with metrics
-11. Add charts/visualizations for spending trends
-12. Deploy to Vercel production
+2. Add expense edit functionality (update total when items change)
+3. Implement expense reassignment to savings (future enhancement)
+4. Add carry-over auto-calculation from previous month
+5. Add expense date range filter on history page
+6. Implement Magic Link email invitations (Supabase email templates)
+7. Add workspace activity feed
+8. Implement file attachments (Vercel Blob setup)
+9. Add workspace settings page
+10. Add audit log for changes
+11. Implement export to CSV with metrics and totals
+12. Add charts/visualizations for spending trends
+13. Add expense analytics (spending by category over time)
+14. Deploy to Vercel production
 
 ---
 
