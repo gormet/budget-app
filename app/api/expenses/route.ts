@@ -8,6 +8,7 @@ const createExpenseSchema = z.object({
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   expenseName: z.string().min(1),
   note: z.string().optional(),
+  totalAmount: z.number().min(0),
   items: z.array(
     z.object({
       itemName: z.string().min(1),
@@ -40,6 +41,7 @@ export async function POST(request: Request) {
         date: validated.date,
         expense_name: validated.expenseName,
         note: validated.note || null,
+        total_amount: validated.totalAmount,
         created_by: user.id,
       })
       .select()

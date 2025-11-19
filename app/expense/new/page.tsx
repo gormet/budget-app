@@ -105,6 +105,14 @@ export default function NewExpensePage() {
     setLineItems(updated)
   }
 
+  // Calculate total from line items
+  const calculateTotal = () => {
+    return lineItems.reduce((sum, item) => {
+      const amount = parseFloat(item.amount) || 0
+      return sum + amount
+    }, 0)
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
 
@@ -135,6 +143,8 @@ export default function NewExpensePage() {
       }
     }
 
+    const totalAmount = calculateTotal()
+
     setLoading(true)
     try {
       await apiPOST('/api/expenses', {
@@ -142,6 +152,7 @@ export default function NewExpensePage() {
         date,
         expenseName,
         note: note || undefined,
+        totalAmount,
         items: lineItems.map(li => ({
           itemName: li.itemName,
           budgetItemId: li.budgetItemId,
@@ -340,11 +351,20 @@ export default function NewExpensePage() {
               </button>
             </div>
 
-            {/* Submit */}
+            {/* Total Display */}
             <div className="border-t border-gray-200 pt-6 mt-6">
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 mb-6">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-gray-900">Total Amount</h3>
+                  <p className="text-3xl font-bold text-gray-900">
+                    RM {calculateTotal().toFixed(2)}
+                  </p>
+                </div>
+              </div>
+
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || !canEdit}
                 className="w-full px-4 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
               >
                 {loading ? 'Creating...' : 'Create Expense'}

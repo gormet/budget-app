@@ -160,6 +160,7 @@ export interface Database {
           date: string
           expense_name: string
           note: string | null
+          total_amount: number
           created_by: string
           created_at: string
           updated_at: string
@@ -171,6 +172,7 @@ export interface Database {
           date: string
           expense_name: string
           note?: string | null
+          total_amount?: number
           created_by: string
           created_at?: string
           updated_at?: string
@@ -182,6 +184,7 @@ export interface Database {
           date?: string
           expense_name?: string
           note?: string | null
+          total_amount?: number
           created_by?: string
           created_at?: string
           updated_at?: string

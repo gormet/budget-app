@@ -7,6 +7,18 @@ import Badge from '@/components/Badge'
 import { apiGET } from '@/lib/api'
 import { useWorkspace } from '@/lib/workspace-context'
 
+interface BudgetItem {
+  id: string
+  budget_type_id: string
+  name: string
+}
+
+interface BudgetType {
+  id: string
+  name: string
+  order: number
+}
+
 interface ExpenseItem {
   id: string
   item_name: string
@@ -25,6 +37,7 @@ interface Expense {
   date: string
   expense_name: string
   note: string | null
+  total_amount: number
   expense_items: ExpenseItem[]
   created_by_email?: string
   created_by_name?: string
@@ -34,19 +47,32 @@ export default function HistoryPage() {
   const { workspaceId, workspaceRole } = useWorkspace()
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
   const [expenses, setExpenses] = useState<Expense[]>([])
+  const [budgetTypes, setBudgetTypes] = useState<BudgetType[]>([])
+  const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([])
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [budgetTypeFilter, setBudgetTypeFilter] = useState<string>('')
+  const [budgetItemFilter, setBudgetItemFilter] = useState<string>('')
   const [expandedExpenseId, setExpandedExpenseId] = useState<string | null>(null)
 
   useEffect(() => {
     if (selectedMonthId) {
-      loadExpenses()
+      loadBudgetData()
     } else {
       // Clear data when no month selected
       setExpenses([])
+      setBudgetTypes([])
+      setBudgetItems([])
     }
-  }, [selectedMonthId, searchQuery, statusFilter])
+  }, [selectedMonthId])
+
+  // Load expenses when month or filters change (and after budget data is loaded)
+  useEffect(() => {
+    if (selectedMonthId) {
+      loadExpenses()
+    }
+  }, [selectedMonthId, searchQuery, statusFilter, budgetTypeFilter, budgetItemFilter, budgetItems])
 
   // Reload data when workspace changes
   useEffect(() => {
@@ -54,11 +80,32 @@ export default function HistoryPage() {
       // Clear selection when workspace changes (empty string triggers auto-select in MonthSelector)
       setSelectedMonthId('')
       setExpenses([])
+      setBudgetTypes([])
+      setBudgetItems([])
       setSearchQuery('')
       setStatusFilter('')
+      setBudgetTypeFilter('')
+      setBudgetItemFilter('')
       setExpandedExpenseId(null)
     }
   }, [workspaceId])
+
+  // When budget type filter changes, clear budget item filter
+  useEffect(() => {
+    setBudgetItemFilter('')
+  }, [budgetTypeFilter])
+
+  async function loadBudgetData() {
+    if (!selectedMonthId) return
+
+    try {
+      const response: any = await apiGET(`/api/budget/${selectedMonthId}`)
+      setBudgetTypes(response.data.types)
+      setBudgetItems(response.data.items)
+    } catch (error) {
+      console.error('Failed to load budget data:', error)
+    }
+  }
 
   async function loadExpenses() {
     if (!selectedMonthId) return
@@ -71,13 +118,43 @@ export default function HistoryPage() {
       if (statusFilter) params.append('status', statusFilter)
 
       const response: any = await apiGET(`/api/expenses?${params.toString()}`)
-      setExpenses(response.data)
+      
+      // Filter by budget type and/or budget item on client side
+      let filtered = response.data
+      
+      // Filter by budget type
+      if (budgetTypeFilter) {
+        // Get all budget item IDs that belong to this budget type
+        const budgetItemIdsInType = budgetItems
+          .filter(item => item.budget_type_id === budgetTypeFilter)
+          .map(item => item.id)
+        
+        filtered = filtered.filter((expense: Expense) =>
+          expense.expense_items.some(item => 
+            budgetItemIdsInType.includes(item.budget_items.id)
+          )
+        )
+      }
+      
+      // Filter by specific budget item (if selected)
+      if (budgetItemFilter) {
+        filtered = filtered.filter((expense: Expense) =>
+          expense.expense_items.some(item => item.budget_items.id === budgetItemFilter)
+        )
+      }
+      
+      setExpenses(filtered)
     } catch (error) {
       console.error('Failed to load expenses:', error)
     } finally {
       setLoading(false)
     }
   }
+
+  // Get filtered budget items based on selected budget type
+  const filteredBudgetItems = budgetTypeFilter
+    ? budgetItems.filter(item => item.budget_type_id === budgetTypeFilter)
+    : budgetItems
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -113,25 +190,95 @@ export default function HistoryPage() {
         {selectedMonthId && (
           <>
             {/* Filters */}
-            <div className="mb-6 flex gap-4 flex-wrap">
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name or note..."
-                className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">All Status</option>
-                <option value="POSTED">Posted</option>
-                <option value="PENDING">Pending</option>
-                <option value="APPROVED">Approved</option>
-                <option value="REJECTED">Rejected</option>
-              </select>
+            <div className="mb-6 space-y-4">
+              {/* Row 1: Search and Status */}
+              <div className="flex gap-4 flex-wrap">
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search by name or note..."
+                  className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All Status</option>
+                  <option value="POSTED">Posted</option>
+                  <option value="PENDING">Pending</option>
+                  <option value="APPROVED">Approved</option>
+                  <option value="REJECTED">Rejected</option>
+                </select>
+              </div>
+
+              {/* Row 2: Budget Type and Budget Item */}
+              <div className="flex gap-4 flex-wrap">
+                <select
+                  value={budgetTypeFilter}
+                  onChange={(e) => setBudgetTypeFilter(e.target.value)}
+                  className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">All Budget Types</option>
+                  {budgetTypes.map((type) => (
+                    <option key={type.id} value={type.id}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={budgetItemFilter}
+                  onChange={(e) => setBudgetItemFilter(e.target.value)}
+                  className="flex-1 min-w-[200px] px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!budgetTypeFilter && filteredBudgetItems.length === 0}
+                >
+                  <option value="">All Budget Items</option>
+                  {filteredBudgetItems.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Active Filters Display */}
+              {(searchQuery || statusFilter || budgetItemFilter || budgetTypeFilter) && (
+                <div className="flex items-center gap-2 text-sm">
+                  <span className="text-gray-600">Active filters:</span>
+                  {searchQuery && (
+                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      Search: "{searchQuery}"
+                    </span>
+                  )}
+                  {statusFilter && (
+                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      Status: {statusFilter}
+                    </span>
+                  )}
+                  {budgetTypeFilter && (
+                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      Type: {budgetTypes.find(t => t.id === budgetTypeFilter)?.name}
+                    </span>
+                  )}
+                  {budgetItemFilter && (
+                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                      Item: {budgetItems.find(i => i.id === budgetItemFilter)?.name}
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setSearchQuery('')
+                      setStatusFilter('')
+                      setBudgetTypeFilter('')
+                      setBudgetItemFilter('')
+                    }}
+                    className="text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    Clear all
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Expenses List */}
@@ -171,10 +318,15 @@ export default function HistoryPage() {
                             <p className="text-sm text-gray-600 mt-1">{expense.note}</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm text-gray-500">
-                            {expense.expense_items.length} item(s)
-                          </span>
+                        <div className="flex items-center gap-3">
+                          <div className="text-right">
+                            <p className="text-lg font-bold text-gray-900">
+                              RM {expense.total_amount.toFixed(2)}
+                            </p>
+                            <p className="text-xs text-gray-500">
+                              {expense.expense_items.length} item(s)
+                            </p>
+                          </div>
                           <svg
                             className={`w-5 h-5 text-gray-400 transition-transform ${
                               expandedExpenseId === expense.id ? 'transform rotate-180' : ''
