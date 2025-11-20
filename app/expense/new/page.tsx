@@ -33,10 +33,11 @@ interface LineItem {
 
 export default function NewExpensePage() {
   const router = useRouter()
-  const { workspaceId, workspaceRole, profile } = useWorkspace()
+  const { workspaceId, workspaceRole } = useWorkspace()
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([])
   const [members, setMembers] = useState<WorkspaceMember[]>([])
+  const [currentUserId, setCurrentUserId] = useState<string>('')
   const [loading, setLoading] = useState(false)
   
   const canEdit = workspaceRole === 'OWNER' || workspaceRole === 'EDITOR'
@@ -48,6 +49,11 @@ export default function NewExpensePage() {
   const [lineItems, setLineItems] = useState<LineItem[]>([
     { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '', reimburseTo: '' },
   ])
+
+  // Load current user on mount
+  useEffect(() => {
+    loadCurrentUser()
+  }, [])
 
   useEffect(() => {
     if (selectedMonthId) {
@@ -75,10 +81,19 @@ export default function NewExpensePage() {
       setDate(new Date().toISOString().split('T')[0])
       setNote('')
       setLineItems([
-        { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '', reimburseTo: profile?.id || '' },
+        { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '', reimburseTo: currentUserId },
       ])
     }
-  }, [workspaceId])
+  }, [workspaceId, currentUserId])
+
+  async function loadCurrentUser() {
+    try {
+      const response: any = await apiGET('/api/me')
+      setCurrentUserId(response.user.id)
+    } catch (error) {
+      console.error('Failed to load current user:', error)
+    }
+  }
 
   async function loadBudgetItems() {
     if (!selectedMonthId) return
@@ -108,7 +123,7 @@ export default function NewExpensePage() {
   function addLineItem() {
     setLineItems([
       ...lineItems,
-      { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '', reimburseTo: profile?.id || '' },
+      { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '', reimburseTo: currentUserId },
     ])
   }
 
@@ -123,7 +138,7 @@ export default function NewExpensePage() {
     // If needReimburse changes to true, default reimbursementAmount to amount and reimburseTo to current user
     if (field === 'needReimburse' && value === true) {
       updated[index].reimbursementAmount = updated[index].amount
-      updated[index].reimburseTo = profile?.id || ''
+      updated[index].reimburseTo = currentUserId
     }
     // If needReimburse changes to false, clear reimbursementAmount and reimburseTo
     if (field === 'needReimburse' && value === false) {
