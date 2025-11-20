@@ -16,6 +16,7 @@ const createExpenseSchema = z.object({
       amount: z.number().min(0),
       needReimburse: z.boolean(),
       reimbursementAmount: z.number().min(0).optional(),
+      reimburseTo: z.string().uuid().optional(),
     })
   ).min(1),
   attachments: z.array(
@@ -58,6 +59,9 @@ export async function POST(request: Request) {
       need_reimburse: item.needReimburse,
       reimbursement_amount: item.needReimburse 
         ? (item.reimbursementAmount ?? item.amount) 
+        : null,
+      reimburse_to: item.needReimburse && item.reimburseTo 
+        ? item.reimburseTo 
         : null,
     }))
 
@@ -126,6 +130,7 @@ export async function GET(request: Request) {
           amount,
           need_reimburse,
           reimbursement_amount,
+          reimburse_to,
           reimburse_status,
           budget_items (
             id,

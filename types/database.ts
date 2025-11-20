@@ -200,6 +200,7 @@ export interface Database {
           amount: number
           need_reimburse: boolean
           reimbursement_amount: number | null
+          reimburse_to: string | null
           reimburse_status: 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
           created_at: string
         }
@@ -211,6 +212,7 @@ export interface Database {
           amount: number
           need_reimburse?: boolean
           reimbursement_amount?: number | null
+          reimburse_to?: string | null
           reimburse_status?: 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
           created_at?: string
         }
@@ -222,6 +224,7 @@ export interface Database {
           amount?: number
           need_reimburse?: boolean
           reimbursement_amount?: number | null
+          reimburse_to?: string | null
           reimburse_status?: 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED'
           created_at?: string
         }

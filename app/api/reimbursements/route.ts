@@ -16,6 +16,7 @@ export async function GET(request: Request) {
         item_name,
         amount,
         reimbursement_amount,
+        reimburse_to,
         reimburse_status,
         budget_items (
           id,

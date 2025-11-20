@@ -12,6 +12,7 @@ interface ReimbursementItem {
   item_name: string
   amount: number
   reimbursement_amount: number
+  reimburse_to: string | null
   reimburse_status: 'PENDING' | 'APPROVED' | 'REJECTED'
   budget_items: {
     id: string
@@ -25,10 +26,18 @@ interface ReimbursementItem {
   }
 }
 
+interface WorkspaceMember {
+  profile_id: string
+  email: string
+  display_name: string | null
+  role: string
+}
+
 export default function ReimbursementsPage() {
   const { workspaceId, workspaceRole } = useWorkspace()
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
   const [items, setItems] = useState<ReimbursementItem[]>([])
+  const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>('PENDING')
   
@@ -43,11 +52,19 @@ export default function ReimbursementsPage() {
     }
   }, [statusFilter, selectedMonthId, workspaceId])
 
+  // Load workspace members
+  useEffect(() => {
+    if (workspaceId) {
+      loadMembers()
+    }
+  }, [workspaceId])
+
   // Clear selection when workspace changes
   useEffect(() => {
     if (workspaceId) {
       setSelectedMonthId('')
       setItems([])
+      setMembers([])
       setStatusFilter('PENDING')
     }
   }, [workspaceId])
@@ -69,6 +86,17 @@ export default function ReimbursementsPage() {
       console.error('Failed to load reimbursements:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadMembers() {
+    if (!workspaceId) return
+
+    try {
+      const response: any = await apiGET(`/api/workspaces/${workspaceId}/members`)
+      setMembers(response.data || [])
+    } catch (error) {
+      console.error('Failed to load members:', error)
     }
   }
 
@@ -100,6 +128,46 @@ export default function ReimbursementsPage() {
       console.error('Failed to reject:', error)
       alert(error.message || 'Failed to reject reimbursement')
     }
+  }
+
+  async function handleUpdateReimburseTo(itemId: string, reimburseTo: string) {
+    try {
+      await apiPOST(`/api/reimbursements/${itemId}/update-reimburse-to`, {
+        reimburseTo: reimburseTo || null,
+      })
+      await loadReimbursements()
+    } catch (error: any) {
+      console.error('Failed to update reimburse to:', error)
+      alert(error.message || 'Failed to update assignee')
+    }
+  }
+
+  // Calculate breakdown by member for pending items
+  const getMemberBreakdown = () => {
+    const breakdown = new Map<string, { count: number; total: number; email: string }>()
+    
+    items.forEach(item => {
+      const memberId = item.reimburse_to || 'unassigned'
+      const existing = breakdown.get(memberId) || { count: 0, total: 0, email: '' }
+      
+      if (memberId !== 'unassigned') {
+        const member = members.find(m => m.profile_id === memberId)
+        existing.email = member?.email || 'Unknown'
+      } else {
+        existing.email = 'Unassigned'
+      }
+      
+      existing.count += 1
+      existing.total += item.reimbursement_amount
+      breakdown.set(memberId, existing)
+    })
+    
+    return Array.from(breakdown.entries()).map(([id, data]) => ({
+      id,
+      email: data.email,
+      count: data.count,
+      total: data.total,
+    }))
   }
 
   const getStatusBadge = (status: string) => {
@@ -149,7 +217,7 @@ export default function ReimbursementsPage() {
         {/* Total Summary for Pending */}
         {statusFilter === 'PENDING' && items.length > 0 && (
           <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-medium text-amber-900">Total Pending Reimbursements</h3>
                 <Badge variant="warning">{items.length} item{items.length !== 1 ? 's' : ''}</Badge>
@@ -157,6 +225,21 @@ export default function ReimbursementsPage() {
               <p className="text-2xl font-bold text-amber-900">
                 RM {items.reduce((sum, item) => sum + item.reimbursement_amount, 0).toFixed(2)}
               </p>
+            </div>
+            
+            {/* By Member Breakdown */}
+            <div className="border-t border-amber-200 pt-3 mt-3">
+              <h4 className="text-xs font-semibold text-amber-800 mb-2">By Member:</h4>
+              <div className="space-y-1">
+                {getMemberBreakdown().map((member) => (
+                  <div key={member.id} className="flex items-center justify-between text-xs text-amber-800">
+                    <span>• {member.email}</span>
+                    <span className="font-medium">
+                      {member.count} item{member.count !== 1 ? 's' : ''} • RM {member.total.toFixed(2)}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -193,6 +276,9 @@ export default function ReimbursementsPage() {
                       Reimb. Amount
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                      Reimburse To
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
                       Status
                     </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">
@@ -220,6 +306,28 @@ export default function ReimbursementsPage() {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         RM {item.reimbursement_amount.toFixed(2)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {item.reimburse_status === 'PENDING' ? (
+                          <select
+                            value={item.reimburse_to || ''}
+                            onChange={(e) => handleUpdateReimburseTo(item.id, e.target.value)}
+                            className="px-2 py-1 border border-gray-300 rounded-md text-sm"
+                          >
+                            <option value="">Unassigned</option>
+                            {members.map((member) => (
+                              <option key={member.profile_id} value={member.profile_id}>
+                                {member.email}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-gray-500">
+                            {item.reimburse_to 
+                              ? members.find(m => m.profile_id === item.reimburse_to)?.email || 'Unknown'
+                              : 'Unassigned'}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         {getStatusBadge(item.reimburse_status)}

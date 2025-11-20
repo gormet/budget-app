@@ -26,21 +26,23 @@ A full-stack budgeting application with reimbursement workflow management built 
 3. **Owner-Only Approvals** - Only workspace owners can approve/reject reimbursements
 4. **Income & Carry Over Tracking** ⭐ NEW - Track monthly income and carry forward surplus
 5. **Savings Allocation** ⭐ NEW - Mark budget items as savings with separate tracking
-6. **9-Metric Dashboard** ⭐ NEW - Comprehensive financial overview (income, budget, spending, savings, pending, etc.)
+6. **8-Metric Dashboard** ⭐ UPDATED - Comprehensive financial overview (income, budget, spending, savings, etc.)
 7. **Expense Total Tracking** ⭐ NEW - Automatic calculation and display of expense totals
 8. **Advanced Filtering** ⭐ NEW - Filter expenses by budget type and budget item
-9. Monthly budget management with hierarchical organization (Types → Items)
-10. Multi-line expense tracking with creator identity
-9. Reimbursement workflow (Pending → Approved/Rejected)
-10. Smart budget calculation (only approved reimbursements deduct from budget)
-11. Budget duplication between months
-12. Month editing (income/carry over) with budget-lock protection ⭐ NEW
-13. Month deletion (when no budgets exist) ⭐ NEW
-14. Real-time dashboard with progress indicators
-15. Over-budget warnings
-16. Magic Link authentication (passwordless)
-17. Row-Level Security at database level with workspace membership checks
-18. Workspace member management (invite, change roles, remove)
+9. **Reimbursement Assignment** ⭐ NEW - Assign reimbursements to specific workspace members with member breakdown
+10. **Dashboard Quick Links** ⭐ NEW - Direct navigation from budget types to filtered expense history
+11. Monthly budget management with hierarchical organization (Types → Items)
+12. Multi-line expense tracking with creator identity
+13. Reimbursement workflow (Pending → Approved/Rejected)
+14. Smart budget calculation (only approved reimbursements deduct from budget)
+15. Budget duplication between months
+16. Month editing (income/carry over) with budget-lock protection ⭐ NEW
+17. Month deletion (when no budgets exist) ⭐ NEW
+18. Real-time dashboard with progress indicators
+19. Over-budget warnings
+20. Magic Link authentication (passwordless)
+21. Row-Level Security at database level with workspace membership checks
+22. Workspace member management (invite, change roles, remove)
 
 ---
 
@@ -114,8 +116,9 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 #### 8. expense_items
 - Parent: `expense_id` → `expenses.id`
 - Budget: `budget_item_id` → `budget_items.id`
-- Reimbursement fields: need_reimburse (bool), reimbursement_amount, reimburse_status (enum)
-- Fields: id, expense_id, item_name (required), budget_item_id, amount, need_reimburse, reimbursement_amount, reimburse_status, created_at
+- Reimbursement fields: need_reimburse (bool), reimbursement_amount, reimburse_status (enum), **reimburse_to** ⭐ NEW
+- **Reimburse To** ⭐ NEW: `reimburse_to` (UUID nullable, references profiles.id) - assigns reimbursement to workspace member
+- Fields: id, expense_id, item_name (required), budget_item_id, amount, need_reimburse, reimbursement_amount, reimburse_to, reimburse_status, created_at
 
 #### 9. attachments
 - Parent: `expense_id` → `expenses.id`
@@ -279,7 +282,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │   │       ├── route.ts              # GET list with filters
 │   │       └── [expenseItemId]/
 │   │           ├── approve/route.ts  # POST approve
-│   │           └── reject/route.ts   # POST reject
+│   │           ├── reject/route.ts   # POST reject
+│   │           └── update-reimburse-to/route.ts # POST update assignee ⭐ NEW
 │   ├── auth/
 │   │   └── callback/
 │   │       └── route.ts              # GET handler for Magic Link callback
@@ -318,7 +322,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │       ├── 07_workspace_creation_alternative.sql  # ⭐ NEW - Function approach
 │       ├── 08_fix_infinite_recursion.sql  # ⭐ NEW - Recursion fix
 │       ├── 09_add_income_carry_over.sql   # ⭐ NEW - Income tracking & savings feature
-│       └── 10_add_expense_total.sql       # ⭐ NEW - Expense total amount tracking
+│       ├── 10_add_expense_total.sql       # ⭐ NEW - Expense total amount tracking
+│       └── 11_add_reimburse_to.sql        # ⭐ NEW - Reimbursement assignment to members
 ├── types/
 │   └── database.ts                   # TypeScript types for Supabase
 ├── middleware.ts                     # Route protection + session refresh
@@ -719,6 +724,7 @@ Already run in Supabase:
 8. ✅ `FIX_INVITE_PROFILE_LOOKUP.sql` - Adds SECURITY DEFINER functions for invite
 9. ✅ `09_add_income_carry_over.sql` - Income tracking, savings, dashboard metrics ⭐ NEW (Oct 26)
 10. ✅ `10_add_expense_total.sql` - Adds total_amount column to expenses table ⭐ NEW (Nov 19)
+11. ⏳ `11_add_reimburse_to.sql` - Adds reimburse_to column to expense_items for member assignment ⭐ NEW (Nov 20)
 
 **Additional migration files** (for reference/troubleshooting):
 - `06_fix_workspace_creation.sql` - RLS policy fix
@@ -1085,21 +1091,81 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 5. ✅ `app/api/expenses/route.ts` - API accepts totalAmount
 6. ✅ `types/database.ts` - Updated expense types
 
+### Reimbursement Assignment & Navigation (2025-11-20) ⭐
+**Major Feature:** Member assignment for reimbursements with breakdown tracking + quick navigation from dashboard
+
+**What Was Built:**
+1. ✅ **Reimbursement Assignment:**
+   - Added `reimburse_to` column to expense_items (nullable UUID → profiles.id)
+   - Dropdown on Expense Form to assign reimbursement to workspace member
+   - Defaults to current user, displays member emails
+   - Editable dropdown on Reimbursements page for pending items
+   - Can be left unassigned (null)
+
+2. ✅ **Member Breakdown Display:**
+   - Pending summary card shows total for all pending reimbursements
+   - "By Member" breakdown section showing:
+     * Count of items per member
+     * Total amount per member
+     * Unassigned items tracked separately
+   - Follows Option A layout (breakdown under main total)
+
+3. ✅ **Dashboard Quick Links:**
+   - "View All Expenses →" link on each Budget Type section
+   - Navigates to History page with filters pre-applied:
+     * Month filter auto-set
+     * Budget Type filter auto-applied
+   - Enables quick drill-down from summary to detail
+
+4. ✅ **API & Data Flow:**
+   - New endpoint: `POST /api/reimbursements/[expenseItemId]/update-reimburse-to`
+   - Updates assignee without changing approval status
+   - Fetches workspace members on both expense form and reimbursements page
+   - GET /api/expenses includes reimburse_to
+   - GET /api/reimbursements includes reimburse_to
+
+**User Experience Improvements:**
+- Reimbursement requesters default to current user (convenience)
+- All workspace members visible in dropdown (any role can be assigned)
+- Unassigned reimbursements tracked separately (visibility)
+- Quick navigation from dashboard budget types to filtered history
+- Real-time breakdown calculation on reimbursements page
+
+**Technical Implementation:**
+- Database: nullable foreign key with index
+- Client-side: member breakdown calculation using Map
+- Server-side: Zod validation for UUID
+- URL params: monthId & budgetTypeId passed via query string
+- Auto-apply filters: useEffect with urlParamsApplied flag
+
+**Files Created/Modified:**
+1. ✅ `11_add_reimburse_to.sql` - Database migration
+2. ✅ `app/expense/new/page.tsx` - Reimburse To dropdown
+3. ✅ `app/reimbursements/page.tsx` - Member breakdown + editable dropdown
+4. ✅ `app/api/expenses/route.ts` - Save reimburse_to
+5. ✅ `app/api/reimbursements/route.ts` - Include reimburse_to in response
+6. ✅ `app/api/reimbursements/[expenseItemId]/update-reimburse-to/route.ts` - New endpoint
+7. ✅ `app/page.tsx` - Dashboard quick links
+8. ✅ `app/history/page.tsx` - URL param handling (already implemented)
+9. ✅ `types/database.ts` - Updated expense_items type
+
 ### Next Session Recommendations
 1. ✅ **Push to GitHub** (setup complete - see GITHUB_SETUP.md)
-2. Add expense edit functionality (update total when items change)
-3. Implement expense reassignment to savings (future enhancement)
-4. Add carry-over auto-calculation from previous month
-5. Add expense date range filter on history page
-6. Implement Magic Link email invitations (Supabase email templates)
-7. Add workspace activity feed
-8. Implement file attachments (Vercel Blob setup)
-9. Add workspace settings page
-10. Add audit log for changes
-11. Implement export to CSV with metrics and totals
-12. Add charts/visualizations for spending trends
-13. Add expense analytics (spending by category over time)
-14. Deploy to Vercel production
+2. 🔄 **Run 11_add_reimburse_to.sql** in Supabase SQL Editor (migration pending)
+3. Add expense edit functionality (update total when items change)
+4. Implement expense reassignment to savings (future enhancement)
+5. Add carry-over auto-calculation from previous month
+6. Add expense date range filter on history page
+7. Implement Magic Link email invitations (Supabase email templates)
+8. Add workspace activity feed
+9. Implement file attachments (Vercel Blob setup)
+10. Add workspace settings page
+11. Add audit log for changes
+12. Implement export to CSV with metrics and totals
+13. Add charts/visualizations for spending trends
+14. Add expense analytics (spending by category over time)
+15. Add notification system for reimbursement assignments
+16. Deploy to Vercel production
 
 ---
 

@@ -210,7 +210,7 @@ export default function DashboardPage() {
                                 onClick={() => router.push(`/history?monthId=${selectedMonthId}&budgetTypeId=${type.id}`)}
                                 className="mt-1 text-xs text-blue-600 hover:text-blue-700 hover:underline"
                               >
-                                View All Transactions →
+                                View All Expenses →
                               </button>
                             </div>
                             <span className="text-sm text-gray-600">

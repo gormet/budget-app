@@ -15,19 +15,28 @@ interface BudgetItem {
   remaining: number
 }
 
+interface WorkspaceMember {
+  profile_id: string
+  email: string
+  display_name: string | null
+  role: string
+}
+
 interface LineItem {
   itemName: string
   budgetItemId: string
   amount: string
   needReimburse: boolean
   reimbursementAmount: string
+  reimburseTo: string
 }
 
 export default function NewExpensePage() {
   const router = useRouter()
-  const { workspaceId, workspaceRole } = useWorkspace()
+  const { workspaceId, workspaceRole, profile } = useWorkspace()
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([])
+  const [members, setMembers] = useState<WorkspaceMember[]>([])
   const [loading, setLoading] = useState(false)
   
   const canEdit = workspaceRole === 'OWNER' || workspaceRole === 'EDITOR'
@@ -37,7 +46,7 @@ export default function NewExpensePage() {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0])
   const [note, setNote] = useState('')
   const [lineItems, setLineItems] = useState<LineItem[]>([
-    { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '' },
+    { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '', reimburseTo: '' },
   ])
 
   useEffect(() => {
@@ -49,6 +58,13 @@ export default function NewExpensePage() {
     }
   }, [selectedMonthId])
 
+  // Load workspace members when workspace changes
+  useEffect(() => {
+    if (workspaceId) {
+      loadMembers()
+    }
+  }, [workspaceId])
+
   // Clear selection when workspace changes
   useEffect(() => {
     if (workspaceId) {
@@ -59,7 +75,7 @@ export default function NewExpensePage() {
       setDate(new Date().toISOString().split('T')[0])
       setNote('')
       setLineItems([
-        { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '' },
+        { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '', reimburseTo: profile?.id || '' },
       ])
     }
   }, [workspaceId])
@@ -78,10 +94,21 @@ export default function NewExpensePage() {
     }
   }
 
+  async function loadMembers() {
+    if (!workspaceId) return
+
+    try {
+      const response: any = await apiGET(`/api/workspaces/${workspaceId}/members`)
+      setMembers(response.data || [])
+    } catch (error) {
+      console.error('Failed to load members:', error)
+    }
+  }
+
   function addLineItem() {
     setLineItems([
       ...lineItems,
-      { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '' },
+      { itemName: '', budgetItemId: '', amount: '', needReimburse: false, reimbursementAmount: '', reimburseTo: profile?.id || '' },
     ])
   }
 
@@ -93,13 +120,15 @@ export default function NewExpensePage() {
     const updated = [...lineItems]
     updated[index] = { ...updated[index], [field]: value }
 
-    // If needReimburse changes to true, default reimbursementAmount to amount
+    // If needReimburse changes to true, default reimbursementAmount to amount and reimburseTo to current user
     if (field === 'needReimburse' && value === true) {
       updated[index].reimbursementAmount = updated[index].amount
+      updated[index].reimburseTo = profile?.id || ''
     }
-    // If needReimburse changes to false, clear reimbursementAmount
+    // If needReimburse changes to false, clear reimbursementAmount and reimburseTo
     if (field === 'needReimburse' && value === false) {
       updated[index].reimbursementAmount = ''
+      updated[index].reimburseTo = ''
     }
 
     setLineItems(updated)
@@ -159,6 +188,7 @@ export default function NewExpensePage() {
           amount: parseFloat(li.amount),
           needReimburse: li.needReimburse,
           reimbursementAmount: li.needReimburse ? parseFloat(li.reimbursementAmount) : undefined,
+          reimburseTo: li.needReimburse && li.reimburseTo ? li.reimburseTo : undefined,
         })),
       })
 
@@ -311,20 +341,40 @@ export default function NewExpensePage() {
                         </div>
 
                         {item.needReimburse && (
-                          <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">
-                              Reimbursement Amount <span className="text-red-500">*</span>
-                            </label>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={item.reimbursementAmount}
-                              onChange={(e) => updateLineItem(index, 'reimbursementAmount', e.target.value)}
-                              required
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                              placeholder="0.00"
-                            />
-                          </div>
+                          <>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Reimbursement Amount <span className="text-red-500">*</span>
+                              </label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={item.reimbursementAmount}
+                                onChange={(e) => updateLineItem(index, 'reimbursementAmount', e.target.value)}
+                                required
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                                placeholder="0.00"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 mb-1">
+                                Reimburse To <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                value={item.reimburseTo}
+                                onChange={(e) => updateLineItem(index, 'reimburseTo', e.target.value)}
+                                required
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md"
+                              >
+                                <option value="">Select member</option>
+                                {members.map((member) => (
+                                  <option key={member.profile_id} value={member.profile_id}>
+                                    {member.email}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
                         )}
                       </div>
 
