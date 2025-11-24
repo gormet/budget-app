@@ -26,23 +26,24 @@ A full-stack budgeting application with reimbursement workflow management built 
 3. **Owner-Only Approvals** - Only workspace owners can approve/reject reimbursements
 4. **Income & Carry Over Tracking** ⭐ NEW - Track monthly income and carry forward surplus
 5. **Savings Allocation** ⭐ NEW - Mark budget items as savings with separate tracking
-6. **8-Metric Dashboard** ⭐ UPDATED - Comprehensive financial overview (income, budget, spending, savings, etc.)
-7. **Expense Total Tracking** ⭐ NEW - Automatic calculation and display of expense totals
-8. **Advanced Filtering** ⭐ NEW - Filter expenses by budget type and budget item
-9. **Reimbursement Assignment** ⭐ NEW - Assign reimbursements to specific workspace members with member breakdown
-10. **Dashboard Quick Links** ⭐ NEW - Direct navigation from budget types to filtered expense history
-11. Monthly budget management with hierarchical organization (Types → Items)
-12. Multi-line expense tracking with creator identity
-13. Reimbursement workflow (Pending → Approved/Rejected)
-14. Smart budget calculation (only approved reimbursements deduct from budget)
-15. Budget duplication between months
-16. Month editing (income/carry over) with budget-lock protection ⭐ NEW
-17. Month deletion (when no budgets exist) ⭐ NEW
-18. Real-time dashboard with progress indicators
-19. Over-budget warnings
-20. Magic Link authentication (passwordless)
-21. Row-Level Security at database level with workspace membership checks
-22. Workspace member management (invite, change roles, remove)
+6. **Budget Lock / Planning Mode** ⭐ NEW - Toggle between planning mode (flexible editing) and locked mode (finalized budget)
+7. **8-Metric Dashboard** ⭐ UPDATED - Comprehensive financial overview (income, budget, spending, savings, etc.)
+8. **Expense Total Tracking** ⭐ NEW - Automatic calculation and display of expense totals
+9. **Advanced Filtering** ⭐ NEW - Filter expenses by budget type and budget item
+10. **Reimbursement Assignment** ⭐ NEW - Assign reimbursements to specific workspace members with member breakdown
+11. **Dashboard Quick Links** ⭐ NEW - Direct navigation from budget types to filtered expense history
+12. Monthly budget management with hierarchical organization (Types → Items)
+13. Multi-line expense tracking with creator identity
+14. Reimbursement workflow (Pending → Approved/Rejected)
+15. Smart budget calculation (only approved reimbursements deduct from budget)
+16. Budget duplication between months
+17. Month editing with flexible rules based on lock status
+18. Month deletion with flexible rules based on lock status and expenses
+19. Real-time dashboard with progress indicators
+20. Over-budget warnings
+21. Magic Link authentication (passwordless)
+22. Row-Level Security at database level with workspace membership checks
+23. Workspace member management (invite, change roles, remove)
 
 ---
 
@@ -91,7 +92,10 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 - Unique constraint: (workspace_id, year, month) - changed from owner-based
 - Fields: id, workspace_id, owner_id, year, month, title, created_at
 - **Income tracking** ⭐ NEW: `income` (NUMERIC, required, ≥0), `carry_over` (NUMERIC, default 0, ≥0)
-- **Edit Protection**: income/carry_over locked once budget items exist (trigger enforced)
+- **Budget Lock** ⭐ NEW: `is_locked` (BOOLEAN, default false) - controls editing permissions
+  - When false (Planning Mode): can edit income/carry-over, can delete month even with budget items (if no expenses)
+  - When true (Locked): cannot edit income/carry-over, cannot delete if has budget items
+  - Trigger enforces: income/carry-over cannot be edited if locked OR has expenses
 
 #### 5. budget_types
 - Parent: `month_id` → `months.id`
@@ -275,9 +279,10 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │   │   ├── months/
 │   │   │   ├── route.ts              # GET list, POST create
 │   │   │   └── [id]/
-│   │   │       ├── route.ts          # PATCH edit, DELETE month ⭐ NEW
+│   │   │       ├── route.ts          # PATCH edit (income/carry-over/is_locked), DELETE month ⭐ UPDATED
 │   │   │       ├── duplicate/route.ts # POST duplicate
-│   │   │       └── totals/route.ts   # GET month metrics ⭐ NEW
+│   │   │       ├── totals/route.ts   # GET month metrics ⭐ NEW
+│   │   │       └── toggle-lock/route.ts # POST toggle lock status ⭐ NEW
 │   │   └── reimbursements/
 │   │       ├── route.ts              # GET list with filters
 │   │       └── [expenseItemId]/
@@ -323,7 +328,8 @@ BLOB_READ_WRITE_TOKEN=<optional-vercel-blob-token>
 │       ├── 08_fix_infinite_recursion.sql  # ⭐ NEW - Recursion fix
 │       ├── 09_add_income_carry_over.sql   # ⭐ NEW - Income tracking & savings feature
 │       ├── 10_add_expense_total.sql       # ⭐ NEW - Expense total amount tracking
-│       └── 11_add_reimburse_to.sql        # ⭐ NEW - Reimbursement assignment to members
+│       ├── 11_add_reimburse_to.sql        # ⭐ NEW - Reimbursement assignment to members
+│       └── 12_add_month_lock.sql          # ⭐ NEW - Budget lock / planning mode feature
 ├── types/
 │   └── database.ts                   # TypeScript types for Supabase
 ├── middleware.ts                     # Route protection + session refresh
@@ -583,13 +589,37 @@ When inviting someone who isn't yet in any shared workspace, RLS blocks the quer
 **Solution:** Added global CSS styling for select elements with proper spacing  
 **Status:** Fixed in `app/globals.css` with custom SVG arrow and 2.5rem right padding
 
-### 11. v_month_totals View Security Warning ⚠️ NEEDS FIX
+### 11. v_month_totals View Security Warning ✅ SOLVED
 **Warning:** "View public.v_month_totals is defined with the SECURITY DEFINER property"  
 **Cause:** Views don't have SECURITY DEFINER property (that's for functions only), warning is likely due to unusual ownership/permissions from CREATE OR REPLACE  
 **Impact:** Warning in Supabase dashboard, also Total Saving was hardcoded to 0 instead of calculated  
 **Solution:** Run `FIX_VIEW_SECURITY.sql` to drop and recreate view cleanly  
 **Bonus:** Fix also implements actual Total Saving calculation from is_saving budget items  
-**Status:** Fix created - see FIX_VIEW_SECURITY_ISSUE.md for details
+**Status:** Fixed - see FIX_VIEW_SECURITY_ISSUE.md for details
+
+### 12. Reimbursement Assignment RLS Blocking ✅ SOLVED
+**Error:** UPDATE permission denied when updating `reimburse_to` field for expense items  
+**Cause:** RLS policy only allowed updating expense items if user is the creator  
+**Solution:** Updated RLS policy to allow workspace members (OWNER/EDITOR) to update expense items  
+**Status:** Fixed via migration
+
+### 13. Budget Lock Trigger Issue ✅ SOLVED
+**Error:** "Cannot modify income/carry_over: month already has budget items" even in planning mode  
+**Cause:** Old trigger (`trg_block_income_change_with_budgets`) was still active because migration had incorrect trigger/function names in DROP statements  
+**Solution:** Created `12_add_month_lock_cleanup.sql` to explicitly drop both old and new triggers/functions, then recreate only the correct new trigger  
+**Status:** Fixed - run cleanup migration if old trigger persists
+
+### 14. Month Deletion Foreign Key Error ✅ SOLVED
+**Error:** "Cannot delete this month due to related data" even in planning mode with no expenses  
+**Cause:** Database foreign key constraint (`budget_types_month_id_fkey ON DELETE RESTRICT`) blocks deletion even when logic allows it  
+**Solution:** Updated DELETE API to explicitly cascade deletion in planning mode: delete budget items → delete budget types → delete month  
+**Status:** Fixed in `/app/api/months/[id]/route.ts`
+
+### 15. Lock Status Badge Not Updating ✅ SOLVED
+**Issue:** When toggling lock/unlock on budget page, the "Planning" / "Locked" badge in MonthSelector doesn't update until page refresh  
+**Cause:** MonthSelector component maintains its own state and doesn't know when lock status changes from parent component  
+**Solution:** Added `reloadTrigger` prop to MonthSelector that increments after lock toggle, triggering a reload of month data  
+**Status:** Fixed in `/components/MonthSelector.tsx` and `/app/budget/page.tsx`
 
 ---
 
@@ -725,6 +755,7 @@ Already run in Supabase:
 9. ✅ `09_add_income_carry_over.sql` - Income tracking, savings, dashboard metrics ⭐ NEW (Oct 26)
 10. ✅ `10_add_expense_total.sql` - Adds total_amount column to expenses table ⭐ NEW (Nov 19)
 11. ⏳ `11_add_reimburse_to.sql` - Adds reimburse_to column to expense_items for member assignment ⭐ NEW (Nov 20)
+12. ⏳ `12_add_month_lock.sql` - Adds is_locked column to months for budget lock / planning mode ⭐ NEW (Nov 22)
 
 **Additional migration files** (for reference/troubleshooting):
 - `06_fix_workspace_creation.sql` - RLS policy fix
@@ -1149,10 +1180,106 @@ Complete production-grade budgeting application with reimbursement workflow, aut
 8. ✅ `app/history/page.tsx` - URL param handling (already implemented)
 9. ✅ `types/database.ts` - Updated expense_items type
 
+### Budget Lock / Planning Mode (2025-11-22) ⭐
+**Major Feature:** Flexible budget planning with lock/unlock toggle for iterative refinement
+
+**What Was Built:**
+1. ✅ **is_locked Column:**
+   - Added to months table (default: false = planning mode)
+   - Boolean flag controls editing permissions
+   - Indexed for performance
+
+2. ✅ **Planning Mode (Unlocked):**
+   - Can freely edit income and carry-over
+   - Can delete month even with budget items (if no expenses exist)
+   - Clear UI indicator: "📝 Planning" badge
+   - Enables budget simulation and iteration
+
+3. ✅ **Locked Mode (Finalized):**
+   - Cannot edit income or carry-over
+   - Cannot delete if has budget items
+   - Clear UI indicator: "🔒 Locked" badge
+   - Ensures financial foundation stays fixed
+
+4. ✅ **Smart Trigger Logic:**
+   - Updated `check_month_edit_allowed()` function
+   - Blocks income/carry-over edits if: locked OR has expenses
+   - Allows edits if: unlocked AND no expenses
+   - Clear error messages for each scenario
+
+5. ✅ **API Enhancements:**
+   - PATCH `/api/months/[id]`: accepts `isLocked` parameter
+   - POST `/api/months/[id]/toggle-lock`: toggle with one click
+   - DELETE logic: checks lock status and expenses separately
+   - Improved error messages for all scenarios
+
+6. ✅ **UI Components:**
+   - MonthSelector: shows lock status badge and emoji in dropdown
+   - Budget page: lock/unlock toggle button with confirmation
+   - Lock confirmation modal: explains what happens when locking
+   - Helper text: explains current mode and permissions
+
+**User Experience Improvements:**
+- Iterative budget planning without destructive actions
+- Clear visual indicators of planning vs finalized state
+- Confirmation only when locking (prevents accidental locks)
+- Direct unlock without confirmation (quick adjustments)
+- Multiple scenario testing via duplication
+
+**Technical Implementation:**
+- Database: boolean column with trigger-based enforcement
+- Client-side: real-time lock status display
+- Server-side: Zod validation for lock toggle
+- Business logic: lock status + expenses check for deletion
+
+**Files Created/Modified:**
+1. ✅ `12_add_month_lock.sql` - Database migration
+2. ✅ `app/api/months/[id]/route.ts` - PATCH/DELETE logic updated
+3. ✅ `app/api/months/[id]/toggle-lock/route.ts` - New toggle endpoint
+4. ✅ `components/MonthSelector.tsx` - Lock status indicator
+5. ✅ `app/budget/page.tsx` - Lock toggle button and confirmation modal
+6. ✅ `types/database.ts` - Updated months type
+7. ✅ `AI_CONTEXT.md` - Documentation
+
+### Budget Lock Bug Fixes (2025-11-24) ⭐
+**Problem:** Two issues discovered during testing of Budget Lock feature
+
+**Issue 1 - Month Deletion Foreign Key Error:**
+- Error: "Cannot delete this month due to related data" even in planning mode with no expenses
+- Root Cause: Database foreign key constraint (`budget_types_month_id_fkey ON DELETE RESTRICT`) blocks deletion
+- Solution: Updated DELETE API to explicitly cascade deletion when in planning mode:
+  1. Delete all budget_items for the month
+  2. Delete all budget_types for the month
+  3. Delete the month itself
+- Result: Planning mode now correctly allows month deletion even with budget items (as long as no expenses exist)
+
+**Issue 2 - Lock Status Badge Not Updating:**
+- Error: When toggling lock/unlock, "Planning" / "Locked" badge doesn't update until page refresh
+- Root Cause: MonthSelector component maintains its own state and isn't notified when parent changes lock status
+- Solution: Implemented `reloadTrigger` prop pattern:
+  1. Added `reloadTrigger` number prop to MonthSelector (optional)
+  2. Added useEffect in MonthSelector that watches reloadTrigger and reloads months when it changes
+  3. Budget page increments reloadTrigger after successful lock toggle
+- Result: Badge updates immediately after lock/unlock action
+
+**Files Modified:**
+1. ✅ `app/api/months/[id]/route.ts` - Cascade deletion logic for planning mode
+2. ✅ `components/MonthSelector.tsx` - Added reloadTrigger prop and useEffect
+3. ✅ `app/budget/page.tsx` - Added reloadMonthTrigger state and increment logic
+4. ✅ `AI_CONTEXT.md` - Updated Known Issues section
+
+**Testing Results:**
+- ✅ Planning mode: Can delete month with budget items (no expenses)
+- ✅ Locked mode: Cannot delete month with budget items
+- ✅ Lock badge updates instantly without page refresh
+- ✅ Unlock badge updates instantly without page refresh
+- ✅ No console errors or warnings
+
 ### Next Session Recommendations
 1. ✅ **Push to GitHub** (setup complete - see GITHUB_SETUP.md)
 2. 🔄 **Run 11_add_reimburse_to.sql** in Supabase SQL Editor (migration pending)
-3. Add expense edit functionality (update total when items change)
+3. 🔄 **Run 12_add_month_lock.sql** in Supabase SQL Editor (migration pending)
+4. Add expense edit functionality (update total when items change)
 4. Implement expense reassignment to savings (future enhancement)
 5. Add carry-over auto-calculation from previous month
 6. Add expense date range filter on history page

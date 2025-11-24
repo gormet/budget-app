@@ -76,6 +76,7 @@ export interface Database {
           title: string | null
           income: number
           carry_over: number
+          is_locked: boolean
           created_at: string
         }
         Insert: {
@@ -87,6 +88,7 @@ export interface Database {
           title?: string | null
           income: number
           carry_over?: number
+          is_locked?: boolean
           created_at?: string
         }
         Update: {
@@ -98,6 +100,7 @@ export interface Database {
           title?: string | null
           income?: number
           carry_over?: number
+          is_locked?: boolean
           created_at?: string
         }
       }

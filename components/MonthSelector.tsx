@@ -10,6 +10,7 @@ interface Month {
   title: string | null
   income: number
   carry_over: number
+  is_locked: boolean
 }
 
 interface MonthSelectorProps {
@@ -17,13 +18,15 @@ interface MonthSelectorProps {
   onMonthChange: (monthId: string) => void
   workspaceId: string | null
   role: string | null
+  reloadTrigger?: number
 }
 
 export default function MonthSelector({ 
   selectedMonthId, 
   onMonthChange, 
   workspaceId,
-  role 
+  role,
+  reloadTrigger
 }: MonthSelectorProps) {
   const [months, setMonths] = useState<Month[]>([])
   const [loading, setLoading] = useState(true)
@@ -42,7 +45,8 @@ export default function MonthSelector({
   const [showEditModal, setShowEditModal] = useState(false)
   const [editIncome, setEditIncome] = useState(0)
   const [editCarryOver, setEditCarryOver] = useState(0)
-  const [hasBudgets, setHasBudgets] = useState(false)
+  const [isLocked, setIsLocked] = useState(false)
+  const [hasExpenses, setHasExpenses] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
 
   useEffect(() => {
@@ -54,6 +58,13 @@ export default function MonthSelector({
       onMonthChange('')
     }
   }, [workspaceId])
+
+  // Reload months when external reload is requested
+  useEffect(() => {
+    if (reloadTrigger && reloadTrigger > 0 && workspaceId) {
+      loadMonths()
+    }
+  }, [reloadTrigger])
 
   async function loadMonths() {
     if (!workspaceId) return
@@ -112,24 +123,30 @@ export default function MonthSelector({
     const selectedMonth = months.find(m => m.id === selectedMonthId)
     if (!selectedMonth) return
 
-    // Check if month has budgets
-    await checkHasBudgets()
+    // Check lock status and expenses
+    await checkMonthStatus()
     
     setEditIncome(selectedMonth.income)
     setEditCarryOver(selectedMonth.carry_over)
     setShowEditModal(true)
   }
 
-  async function checkHasBudgets() {
+  async function checkMonthStatus() {
     if (!selectedMonthId) return
     
     try {
-      // Check if budget types exist for this month
-      const response: any = await apiGET(`/api/budget/${selectedMonthId}`)
-      setHasBudgets(response.data.types.length > 0)
+      const selectedMonth = months.find(m => m.id === selectedMonthId)
+      if (selectedMonth) {
+        setIsLocked(selectedMonth.is_locked || false)
+      }
+
+      // Check if month has expenses
+      const response: any = await apiGET(`/api/expenses?monthId=${selectedMonthId}`)
+      setHasExpenses(response.data && response.data.length > 0)
     } catch (error) {
-      console.error('Failed to check budgets:', error)
-      setHasBudgets(false)
+      console.error('Failed to check month status:', error)
+      setIsLocked(false)
+      setHasExpenses(false)
     }
   }
 
@@ -229,21 +246,30 @@ export default function MonthSelector({
     return <div className="text-gray-500">Loading months...</div>
   }
 
+  const selectedMonth = months.find(m => m.id === selectedMonthId)
+
   return (
     <div className="mb-6">
       <div className="flex items-center gap-4 flex-wrap">
-        <select
-          value={selectedMonthId || ''}
-          onChange={(e) => onMonthChange(e.target.value)}
-          className="px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          {months.length === 0 && <option value="">No months yet</option>}
-          {months.map((m) => (
-            <option key={m.id} value={m.id}>
-              {monthName(m.month)} {m.year} {m.title ? `- ${m.title}` : ''}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedMonthId || ''}
+            onChange={(e) => onMonthChange(e.target.value)}
+            className="px-4 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            {months.length === 0 && <option value="">No months yet</option>}
+            {months.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.is_locked ? '🔒 ' : '📝 '}{monthName(m.month)} {m.year} {m.title ? `- ${m.title}` : ''}
+              </option>
+            ))}
+          </select>
+          {selectedMonth && (
+            <span className={`text-xs px-2 py-1 rounded ${selectedMonth.is_locked ? 'bg-gray-200 text-gray-700' : 'bg-green-100 text-green-700'}`}>
+              {selectedMonth.is_locked ? '🔒 Locked' : '📝 Planning'}
+            </span>
+          )}
+        </div>
 
         {canEdit && (
           <button
@@ -271,14 +297,7 @@ export default function MonthSelector({
             </button>
 
             <button
-              onClick={async () => {
-                await checkHasBudgets()
-                if (!hasBudgets) {
-                  setShowDeleteConfirm(true)
-                } else {
-                  alert('Cannot delete month with budget items')
-                }
-              }}
+              onClick={() => setShowDeleteConfirm(true)}
               className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700"
             >
               Delete
@@ -469,10 +488,24 @@ export default function MonthSelector({
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-96">
             <h3 className="text-lg font-semibold mb-4">Edit Month Income</h3>
-            {hasBudgets && (
+            {isLocked && (
+              <div className="mb-4 p-3 bg-gray-100 border border-gray-300 rounded-md">
+                <p className="text-sm text-gray-700">
+                  🔒 Budget is locked. Income and Carry Over cannot be edited.
+                </p>
+              </div>
+            )}
+            {!isLocked && hasExpenses && (
               <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
                 <p className="text-sm text-yellow-800">
-                  ⚠️ This month has budget items. Income and Carry Over cannot be edited.
+                  ⚠️ This month has expenses. Income and Carry Over cannot be edited.
+                </p>
+              </div>
+            )}
+            {!isLocked && !hasExpenses && (
+              <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
+                <p className="text-sm text-green-800">
+                  📝 Planning mode: You can freely edit income and carry over.
                 </p>
               </div>
             )}
@@ -489,7 +522,7 @@ export default function MonthSelector({
                   placeholder="0.00"
                   min="0"
                   step="0.01"
-                  disabled={hasBudgets}
+                  disabled={isLocked || hasExpenses}
                 />
               </div>
               <div>
@@ -504,10 +537,10 @@ export default function MonthSelector({
                   placeholder="0.00"
                   min="0"
                   step="0.01"
-                  disabled={hasBudgets}
+                  disabled={isLocked || hasExpenses}
                 />
               </div>
-              {!hasBudgets && (
+              {!isLocked && !hasExpenses && (
                 <div className="flex gap-2">
                   <button
                     onClick={() => {
@@ -525,7 +558,7 @@ export default function MonthSelector({
               <button
                 onClick={handleEdit}
                 className="flex-1 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={hasBudgets}
+                disabled={isLocked || hasExpenses}
               >
                 Save
               </button>

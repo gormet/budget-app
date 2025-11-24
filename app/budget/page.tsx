@@ -44,6 +44,9 @@ export default function BudgetPage() {
   const [budgetItems, setBudgetItems] = useState<BudgetItem[]>([])
   const [selectedTypeId, setSelectedTypeId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [isLocked, setIsLocked] = useState(false)
+  const [showLockConfirm, setShowLockConfirm] = useState(false)
+  const [reloadMonthTrigger, setReloadMonthTrigger] = useState(0)
   
   const canEdit = workspaceRole === 'OWNER' || workspaceRole === 'EDITOR'
 
@@ -79,11 +82,13 @@ export default function BudgetPage() {
   useEffect(() => {
     if (selectedMonthId) {
       loadBudget()
+      loadMonthLockStatus()
     } else {
       // Clear data when no month selected
       setBudgetTypes([])
       setBudgetItems([])
       setSelectedTypeId(null)
+      setIsLocked(false)
     }
   }, [selectedMonthId])
 
@@ -116,6 +121,49 @@ export default function BudgetPage() {
       console.error('Failed to load budget:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  async function loadMonthLockStatus() {
+    if (!selectedMonthId) return
+    
+    try {
+      const response: any = await apiGET(`/api/months?workspaceId=${workspaceId}`)
+      const month = response.data.find((m: any) => m.id === selectedMonthId)
+      if (month) {
+        setIsLocked(month.is_locked || false)
+      }
+    } catch (error) {
+      console.error('Failed to load month lock status:', error)
+    }
+  }
+
+  async function handleToggleLock() {
+    if (!selectedMonthId) return
+    
+    // Show confirmation only when locking
+    if (!isLocked) {
+      setShowLockConfirm(true)
+      return
+    }
+    
+    // Unlock directly without confirmation
+    await performToggleLock()
+  }
+
+  async function performToggleLock() {
+    if (!selectedMonthId) return
+    
+    try {
+      const response: any = await apiPOST(`/api/months/${selectedMonthId}/toggle-lock`, {})
+      setIsLocked(response.data.is_locked)
+      setShowLockConfirm(false)
+      // Trigger MonthSelector to reload and update the lock status badge
+      setReloadMonthTrigger(prev => prev + 1)
+      alert(response.message)
+    } catch (error: any) {
+      console.error('Failed to toggle lock:', error)
+      alert(error.message || 'Failed to toggle lock status')
     }
   }
 
@@ -303,7 +351,28 @@ export default function BudgetPage() {
           onMonthChange={setSelectedMonthId}
           workspaceId={workspaceId}
           role={workspaceRole}
+          reloadTrigger={reloadMonthTrigger}
         />
+
+        {canEdit && selectedMonthId && (
+          <div className="mb-4">
+            <button
+              onClick={handleToggleLock}
+              className={`px-4 py-2 rounded-md font-medium ${
+                isLocked
+                  ? 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                  : 'bg-green-600 text-white hover:bg-green-700'
+              }`}
+            >
+              {isLocked ? '🔓 Unlock Budget' : '🔒 Lock Budget'}
+            </button>
+            <p className="text-xs text-gray-500 mt-2">
+              {isLocked
+                ? 'Budget is locked. Income and carry-over cannot be edited. Unlock to enable planning mode.'
+                : 'Planning mode active. You can freely edit income, carry-over, and delete this budget (if no expenses).'}
+            </p>
+          </div>
+        )}
 
         {!canEdit && workspaceRole && (
           <div className="mb-4 p-3 bg-yellow-50 border border-yellow-200 rounded-md text-sm text-yellow-800">
@@ -686,6 +755,42 @@ export default function BudgetPage() {
                 className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
               >
                 Confirm & Convert
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lock Confirmation Modal */}
+      {showLockConfirm && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4">
+              🔒 Lock Budget?
+            </h3>
+            <p className="text-sm text-gray-600 mb-4">
+              Locking this budget will prevent editing income and carry-over until you unlock it again.
+            </p>
+            <p className="text-sm text-gray-600 mb-4">
+              You can still:
+            </p>
+            <ul className="list-disc list-inside text-sm text-gray-600 mb-4 space-y-1">
+              <li>Edit budget items</li>
+              <li>Create expenses</li>
+              <li>Unlock anytime (if no expenses exist)</li>
+            </ul>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowLockConfirm(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={performToggleLock}
+                className="flex-1 px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800"
+              >
+                Lock Budget
               </button>
             </div>
           </div>
