@@ -72,9 +72,21 @@ export default function MonthSelector({
     try {
       const response: any = await apiGET(`/api/months?workspaceId=${workspaceId}`)
       setMonths(response.data)
-      // Auto-select first month if available and no month is currently selected
+      
+      // Auto-select current month if available and no month is currently selected
       if (response.data.length > 0 && (!selectedMonthId || selectedMonthId === '')) {
-        onMonthChange(response.data[0].id)
+        const now = new Date()
+        const currentYear = now.getFullYear()
+        const currentMonth = now.getMonth() + 1 // JavaScript months are 0-indexed
+        
+        // Try to find the current month
+        const currentMonthData = response.data.find(
+          (m: Month) => m.year === currentYear && m.month === currentMonth
+        )
+        
+        // If current month exists, select it; otherwise select the first month
+        const monthToSelect = currentMonthData ? currentMonthData.id : response.data[0].id
+        onMonthChange(monthToSelect)
       }
     } catch (error) {
       console.error('Failed to load months:', error)
