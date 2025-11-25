@@ -37,6 +37,12 @@ interface TogglePreview {
   savedRemainingAfter: number
 }
 
+interface MonthTotals {
+  income: number
+  carry_over: number
+  total_income: number
+}
+
 export default function BudgetPage() {
   const { workspaceId, workspaceRole } = useWorkspace()
   const [selectedMonthId, setSelectedMonthId] = useState<string | null>(null)
@@ -47,6 +53,7 @@ export default function BudgetPage() {
   const [isLocked, setIsLocked] = useState(false)
   const [showLockConfirm, setShowLockConfirm] = useState(false)
   const [reloadMonthTrigger, setReloadMonthTrigger] = useState(0)
+  const [monthTotals, setMonthTotals] = useState<MonthTotals | null>(null)
   
   const canEdit = workspaceRole === 'OWNER' || workspaceRole === 'EDITOR'
 
@@ -83,12 +90,14 @@ export default function BudgetPage() {
     if (selectedMonthId) {
       loadBudget()
       loadMonthLockStatus()
+      loadMonthTotals()
     } else {
       // Clear data when no month selected
       setBudgetTypes([])
       setBudgetItems([])
       setSelectedTypeId(null)
       setIsLocked(false)
+      setMonthTotals(null)
     }
   }, [selectedMonthId])
 
@@ -135,6 +144,17 @@ export default function BudgetPage() {
       }
     } catch (error) {
       console.error('Failed to load month lock status:', error)
+    }
+  }
+
+  async function loadMonthTotals() {
+    if (!selectedMonthId) return
+    
+    try {
+      const response: any = await apiGET(`/api/months/${selectedMonthId}/totals`)
+      setMonthTotals(response.data)
+    } catch (error) {
+      console.error('Failed to load month totals:', error)
     }
   }
 
@@ -466,10 +486,21 @@ export default function BudgetPage() {
                   ))}
                 </div>
 
-                {budgetTypes.length > 0 && (
-                  <div className="mb-4 pt-4 border-t border-gray-200">
+                {budgetTypes.length > 0 && monthTotals && (
+                  <div className="mb-4 pt-4 border-t border-gray-200 space-y-2">
+                    <div className="flex items-center justify-between p-3 bg-green-50 rounded-md">
+                      <div>
+                        <span className="font-semibold text-gray-900">Total Income:</span>
+                        <p className="text-xs text-gray-600 mt-1">
+                          Income: RM {monthTotals.income.toFixed(2)} + Carry Over: RM {monthTotals.carry_over.toFixed(2)}
+                        </p>
+                      </div>
+                      <span className="text-lg font-bold text-green-700">
+                        RM {monthTotals.total_income.toFixed(2)}
+                      </span>
+                    </div>
                     <div className="flex items-center justify-between p-3 bg-blue-50 rounded-md">
-                      <span className="font-semibold text-gray-900">Grand Total:</span>
+                      <span className="font-semibold text-gray-900">Total Budget:</span>
                       <span className="text-lg font-bold text-blue-700">
                         RM {budgetTypes.reduce((sum, type) => sum + getTypeTotalBudget(type.id), 0).toFixed(2)}
                       </span>

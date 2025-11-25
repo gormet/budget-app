@@ -109,6 +109,9 @@ export default function DashboardPage() {
                 <p className="text-2xl font-bold text-green-600">
                   RM {monthTotals.total_income.toFixed(2)}
                 </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Income: RM {monthTotals.income.toFixed(2)} + Carry Over: RM {monthTotals.carry_over.toFixed(2)}
+                </p>
               </div>
 
               {/* 2. Total Budget */}
